@@ -7,6 +7,8 @@
 models/
 *.pth
 *.onnx
+!models/convnext/v1_baseline/model_final.pth
+!models/maskrcnn/big_aug_anchors_v4_hope/model_final.pth
 
 # --- Datos / Datasets (excluir todo excepto datasets utiles) ---
 data/
