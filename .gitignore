@@ -1,0 +1,52 @@
+# =============================================================
+# .gitignore — Proyecto H
+# Archivos que Git NO debe versionar
+# =============================================================
+
+# --- Modelos entrenados (19 GB, demasiado grandes para GitHub) ---
+models/
+*.pth
+*.onnx
+
+# --- Datos / Datasets (excluir todo excepto datasets utiles) ---
+data/
+
+# --- Outputs de entrenamiento (logs, métricas temporales) ---
+outputs/
+
+# --- Python cache y bytecode ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+*.egg
+
+# --- Entornos virtuales (nunca se suben, cada PC tiene el suyo) ---
+.venv/
+venv/
+env/
+
+# --- IDE / Editor ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- Jupyter ---
+.ipynb_checkpoints/
+
+# --- Variables de entorno (contienen secrets/API keys) ---
+.env
+.env.local
+
+# --- Gemini/Antigravity (metadata del asistente) ---
+.gemini/
+.agents/
+
+# --- Legacy (carpeta de respaldo, no es código activo) ---
+00-Project_legacy_yolo/

@@ -1,0 +1,131 @@
+# =====================================================================
+# CONFIGURACIÓN CENTRAL - ConvNeXt Tiny (CLASIFICACIÓN DE ESPECIES)
+# Archivo maestro para editar hiperparámetros de entrenamiento.
+# =====================================================================
+
+# ─────────────────────────────────────────────────────────────────────
+# MODELO
+# ─────────────────────────────────────────────────────────────────────
+MODEL:
+  # Nombre del modelo en la librería timm.
+  # convnext_tiny.in12k_ft_in1k = preentrenado en ImageNet-12k + finetuneado en ImageNet-1k
+  NAME: "convnext_tiny.in12k_ft_in1k"
+
+  # Número de clases del dataset (las subcarpetas dentro de train/, sin contar las excluidas)
+  NUM_CLASSES: 11
+
+  # Carpetas de clase a IGNORAR durante entrenamiento (no se cargan como datos).
+  # Útil para descartar imágenes etiquetadas como basura/no válidas.
+  EXCLUDE_CLASSES: ["borrar"]
+
+  # Si True, carga los pesos preentrenados del modelo de timm (transfer learning).
+  # Si False, entrena desde cero (NO recomendado con datasets pequeños).
+  PRETRAINED: True
+
+  # Si True, congela el backbone y solo entrena la cabeza de clasificación (fc).
+  # Útil si tienes muy pocas imágenes (<500) y quieres evitar sobreajuste.
+  # Si False, hace fine-tuning completo de toda la red.
+  FREEZE_BACKBONE: False
+
+# ─────────────────────────────────────────────────────────────────────
+# DATOS
+# ─────────────────────────────────────────────────────────────────────
+DATA:
+  # Carpeta raíz del dataset (formato ImageFolder: train/, valid/, test/ con subcarpetas por clase)
+  DATASET_DIR: "data/Proyecto_H_clas.v1i.folder"
+
+  # Tamaño de entrada (las imágenes ya vienen 224x224 de Roboflow, pero se vuelve a
+  # forzar en el pipeline por si acaso hay algún rezagado con tamaño distinto).
+  IMG_SIZE: 224
+
+  # Normalización con media/std de ImageNet (OBLIGATORIO para modelos preentrenados en ImageNet).
+  MEAN: [0.485, 0.456, 0.406]
+  STD: [0.229, 0.224, 0.225]
+
+  # Hilos/procesos para cargar datos del disco a RAM en paralelo.
+  NUM_WORKERS: 4
+
+  # Cuántos elementos se le pasan a la red de golpe en cada iteración.
+  # Para 224x224 y ConvNeXt Tiny con 12GB de VRAM, 32 es un valor seguro.
+  # Si hace OOM, baja a 16.
+  BATCH_SIZE: 32
+
+# ─────────────────────────────────────────────────────────────────────
+# AUGMENTACIONES EN RUNTIME (además de las bakeadas por Roboflow)
+# ─────────────────────────────────────────────────────────────────────
+# Roboflow ya aplicó rotaciones, crop, salt&pepper. Aquí añadimos augmentaciones
+# LIGERAS en runtime que no se solapan con las de Roboflow.
+AUGMENTATIONS:
+  # Flip horizontal aleatorio (prob 0.5)
+  HORIZONTAL_FLIP: True
+
+  # Pequeñas variaciones de brillo/contraste/saturación/hue
+  COLOR_JITTER:
+    ENABLED: True
+    BRIGHTNESS: 0.15
+    CONTRAST: 0.15
+    SATURATION: 0.1
+    HUE: 0.05
+
+  # Borrar aleatoriamente un cuadrado de la imagen (simula oclusiones parciales)
+  RANDOM_ERASING:
+    ENABLED: True
+    PROBABILITY: 0.1
+
+# ─────────────────────────────────────────────────────────────────────
+# OPTIMIZADOR
+# ─────────────────────────────────────────────────────────────────────
+SOLVER:
+  # Tipo de optimizador. AdamW es el estándar para transformers y convnext.
+  OPTIMIZER: "AdamW"
+
+  # Learning rate inicial.
+  # 1e-4 es el sweet spot habitual para fine-tuning de ConvNeXt con AdamW.
+  BASE_LR: 0.0001
+
+  # Weight decay (regularización L2). 0.01 es el estándar de ConvNeXt.
+  WEIGHT_DECAY: 0.01
+
+  # Número total de épocas de entrenamiento.
+  # Con ~3000 imgs+augm, 30 épocas suele ser suficiente para converger.
+  EPOCHS: 30
+
+  # Scheduler de learning rate.
+  # "cosine" = Cosine Annealing (baja suavemente el LR del máx al mín siguiendo un coseno).
+  # Es el scheduler estándar usado en el paper de ConvNeXt.
+  SCHEDULER: "cosine"
+
+  # LR mínimo al que llega el cosine annealing al final del entrenamiento.
+  MIN_LR: 0.000001
+
+  # Epochs de warmup lineal (LR sube progresivamente de 0 a BASE_LR).
+  # Evita gradientes explosivos al inicio.
+  WARMUP_EPOCHS: 3
+
+  # Label smoothing: en lugar de targets [0, 0, 1, 0], usa [0.008, 0.008, 0.9, 0.008].
+  # Reduce sobreajuste en datasets pequeños con muchas clases.
+  LABEL_SMOOTHING: 0.1
+
+# ─────────────────────────────────────────────────────────────────────
+# SALIDA
+# ─────────────────────────────────────────────────────────────────────
+OUTPUT:
+  # Directorio base donde se guardan los checkpoints y logs de TensorBoard.
+  DIR_BASE: "models/convnext"
+
+  # Sufijo que se añade al run para identificarlo fácilmente.
+  # El nombre final será: models/convnext/<sufijo>/
+  RUN_NAME: "v1_baseline"
+
+  # Cada cuántas épocas se guarda un checkpoint intermedio del modelo.
+  SAVE_EVERY_N_EPOCHS: 5
+
+# ─────────────────────────────────────────────────────────────────────
+# EVALUACIÓN DURANTE ENTRENAMIENTO
+# ─────────────────────────────────────────────────────────────────────
+EVAL:
+  # Cada cuántas épocas se evalúa en val (accuracy, loss, confusion matrix).
+  EVAL_PERIOD: 1
+
+  # Si True, guarda el mejor modelo (por val accuracy) como best_model.pth.
+  SAVE_BEST: True

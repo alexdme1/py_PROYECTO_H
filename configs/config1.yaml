@@ -1,0 +1,96 @@
+# =====================================================================
+# CONFIGURACIÓN CENTRAL - MASK R-CNN (PROYECTO H)
+# Archivo maestro para editar métricas de Entrenamiento e Inferencia.
+# =====================================================================
+
+MODEL_INFO:
+  SUFIJO_VERSION: "_anchors_v4_hope" # CAMBIO: nueva versión
+
+  OUTPUT_DIR_BASE: "models/maskrcnn"
+
+  BASE_WEIGHTS_YAML: "COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml"
+
+MODEL:
+  # -------------------------------------------------------------------
+  # ESTRUCTURAS GEOMÉTRICAS Y DE NEURONAS
+  # -------------------------------------------------------------------
+  ROI_BOX_HEAD:
+    NAME: "FastRCNNConvFCHead"
+    NUM_CONV: 0
+    NUM_FC: 2
+
+  # -------------------------------------------------------------------
+  # ANCLAS (ANCHORS) - CÓMO ESCANEA LA RED A CIEGAS
+  # -------------------------------------------------------------------
+  ANCHOR_GENERATOR:
+    SIZES: [[16, 32], [32, 64], [64, 128], [128, 256], [256, 512]]
+    # CAMBIO: ligerísimo ajuste ratios para separar mejor tallos vs tickets alargados
+    ASPECT_RATIOS: [[0.25, 0.5, 1.0, 2.5, 4.0]]
+
+  # -------------------------------------------------------------------
+  # CAPA RPN (REGION PROPOSAL NETWORK) Y FILTROS NMS
+  # -------------------------------------------------------------------
+  RPN:
+    # CAMBIO: bajar un poco NMS para reducir propuestas muy solapadas de tallos
+    NMS_THRESH: 0.65
+    POST_NMS_TOPK_TRAIN: 2000
+    POST_NMS_TOPK_TEST: 2000
+
+  # -------------------------------------------------------------------
+  # CABEZAL DE CLASIFICACIÓN FINAL (RoI)
+  # -------------------------------------------------------------------
+  ROI_HEADS:
+    NUM_CLASSES: 5
+    BATCH_SIZE_PER_IMAGE: 512
+    NMS_THRESH_TEST: 0.65
+    # CAMBIO: subo umbral para producción/validación, menos ruido
+    SCORE_THRESH_TEST: 0.20
+
+INPUT:
+  # -------------------------------------------------------------------
+  # RESOLUCIÓN Y AUGMENTATIONS BÁSICAS
+  # -------------------------------------------------------------------
+  MIN_SIZE_TRAIN: [1000, 1080, 1150]
+  MAX_SIZE_TRAIN: 2000
+  MIN_SIZE_TEST: 1080
+  MAX_SIZE_TEST: 2000
+  RANDOM_FLIP: "horizontal"
+
+  # -------------------------------------------------------------------
+  # DATA AUGMENTATION EXTREMO (CONTRASTE Y BRILLO)
+  # -------------------------------------------------------------------
+  AUGMENTATIONS_EXTRA:
+    ACTIVAS: True
+    PROBABILIDAD: 0.50
+    # CAMBIO: subo un pelín el mínimo para no dejar imágenes demasiado oscuras
+    BRILLO_MIN: 0.7
+    BRILLO_MAX: 1.1
+    # NOTA: si en tu DatasetMapper añades contraste/saturación, yo lo haría suave.
+
+SOLVER:
+  # -------------------------------------------------------------------
+  # LÓGICA DE APRENDIZAJE Y COSTES MATEMÁTICOS
+  # -------------------------------------------------------------------
+  IMS_PER_BATCH: 2
+  BASE_LR: 0.00025
+  # CAMBIO: schedule algo más compacto, suficiente para ~12–14 epochs
+  MAX_ITER: 28000
+  STEPS: [18000, 24000]
+  WARMUP_ITERS: 1000
+
+  WEIGHT_DECAY: 0.0005
+
+DATALOADER:
+  # -------------------------------------------------------------------
+  # GESTIÓN DE CÓMO SE INYECTAN LOS DATOS
+  # -------------------------------------------------------------------
+  NUM_WORKERS: 4
+  SAMPLER_TRAIN: "RepeatFactorTrainingSampler"
+  REPEAT_THRESHOLD: 0.8 # De momento lo mantengo alto; ajustar según métricas por clase
+
+TEST:
+  # -------------------------------------------------------------------
+  # EVALUADOR DE RENDIMIENTO
+  # -------------------------------------------------------------------
+  EVAL_PERIOD: 1000
+  DETECTIONS_PER_IMAGE: 100
