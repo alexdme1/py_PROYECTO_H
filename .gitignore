@@ -3,12 +3,10 @@
 # Archivos que Git NO debe versionar
 # =============================================================
 
-# --- Modelos entrenados (19 GB, demasiado grandes para GitHub) ---
+# --- Modelos entrenados (superan 100 MB, GitHub no los acepta) ---
 models/
 *.pth
 *.onnx
-!models/convnext/v1_baseline/model_final.pth
-!models/maskrcnn/big_aug_anchors_v4_hope/model_final.pth
 
 # --- Datos / Datasets (excluir todo excepto datasets utiles) ---
 data/
