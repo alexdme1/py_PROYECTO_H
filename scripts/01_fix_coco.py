@@ -10,12 +10,16 @@ import cv2
 CATEGORY_MAP = {
     "Flores": 0,
     "0": 1,
+    "Balda": 2,
     "Balda1": 2,
     "Balda2": 2,
     "Balda3": 2,
     "Planta": 3,
     "tallo_grupo": 4
 }
+
+# IDs de categoría a IGNORAR (superclases de Roboflow)
+SKIP_CATEGORY_IDS = {0}
 
 FINAL_CATEGORIES = [
     {"id": 0, "name": "Flores", "supercategory": "PRODUCTO"},
@@ -141,9 +145,17 @@ def fix_and_merge_dataset(input_dir, output_dir):
         kept = 0
         
         for ann in data.get("annotations", []):
-            original_cat_name = original_categories.get(ann.get("category_id"), "Unknown")
+            # Saltar superclases por ID
+            raw_cat_id = ann.get("category_id")
+            if raw_cat_id in SKIP_CATEGORY_IDS:
+                dropped += 1
+                continue
+
+            original_cat_name = original_categories.get(raw_cat_id, "Unknown")
             if original_cat_name not in CATEGORY_MAP:
-                raise ValueError(f"[ERROR] Categoría '{original_cat_name}' no permitida.")
+                print(f"  [!] Categoría desconocida '{original_cat_name}' (id={raw_cat_id}). Descartando.")
+                dropped += 1
+                continue
             
             new_cat_id = CATEGORY_MAP[original_cat_name]
             
@@ -154,8 +166,9 @@ def fix_and_merge_dataset(input_dir, output_dir):
                 
             new_seg = process_segmentation(ann.get("segmentation"))
             if new_seg is None:
-                dropped += 1
-                continue
+                # Si no hay segmentación, generar un polígono rectangular desde la bbox
+                x, y, w, h = new_bbox
+                new_seg = [[x, y, x+w, y, x+w, y+h, x, y+h]]
 
             orig_w = image_orig_widths.get(ann["image_id"])
             if orig_w is None:
@@ -210,7 +223,7 @@ def fix_and_merge_dataset(input_dir, output_dir):
 
 if __name__ == "__main__":
     # --- RUTAS PRINCIPALES (MODIFICAR AQUÍ PARA CAMBIAR DE DATASET DE ENTRADA) ---
-    input_roboflow_dir = os.path.join("data", "Proyecto_H.v2i.coco(big_aug)")
+    input_roboflow_dir = os.path.join("data", "Proyecto_H.v5i.coco(aug_mas_data)")
     output_unified_dir = os.path.join("data", "coco_unified")
     
     fix_and_merge_dataset(input_roboflow_dir, output_unified_dir)

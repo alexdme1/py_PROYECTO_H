@@ -1,326 +1,423 @@
 """
-04_conteo.py
-Módulo para el cruce espacial de tickets y baldas en imágenes frontales,
-y su herencia simétrica hacia imágenes traseras en el sistema PoC.H.
+05_conteo.py
+Módulo para el cruce espacial de tickets, baldas y conteo de artículos
+en el sistema PoC.H. Sigue REGLAS_CONTEO.md estrictamente.
 """
 
-def asignar_tickets_a_baldas(detecciones_frontales, total_baldas=3):
+# =============================================================================
+# BLOQUE A — asignar_tickets_a_baldas()
+# Reglas: A01 a A07
+# =============================================================================
+
+def asignar_tickets_a_baldas(detecciones_frontales):
     """
     Cruce espacial de tickets y baldas en la imagen frontal.
+    Implementa reglas A01-A07 de REGLAS_CONTEO.md.
     
     Args:
-        detecciones_frontales (list): Lista de diccionarios de la forma 
-            {'class': 'ticket'/'balda', 'bbox': [x1, y1, x2, y2]}
-        total_baldas (int): Número teórico esperado de baldas (default 3)
+        detecciones_frontales (list): Lista de dicts {'class': str, 'bbox': [x1,y1,x2,y2], ...}
         
     Returns:
-        dict: Mapeo {ticket_idx: [lista_de_indices_de_balda]}
+        dict: Mapeo {ticket_idx_original: [lista_de_b_order_idx]} o {} si falla
     """
     baldas = []
     tickets = []
     
-    # 1. Separar detecciones conservando su índice original para identificadores
     for i, det in enumerate(detecciones_frontales):
         clase = det.get('class', '').lower()
         if clase == 'balda':
             baldas.append((i, det))
         elif clase == 'ticket':
             tickets.append((i, det))
-            
-    # 2. Ordenar baldas por coordenada Y física (de arriba hacia abajo)
-    # y1 es la coordenada superior de la bounding box [x1, y1, x2, y2]
-    # Índice 0 será la balda más alta (ej. Balda 3), Índice n-1 será la más baja (ej. Balda 1)
+
+    # REGLA-A07: Sin baldas → abortar
+    if not baldas:
+        print("[ERROR A07] No se detectaron baldas en la imagen frontal. Abortando pipeline.")
+        return {}
+
+    # REGLA-A01: Ordenar baldas por Y ascendente (Balda 0 = más alta, Balda N = más baja)
     baldas.sort(key=lambda x: x[1]['bbox'][1])
-    
-    # 3. Asignar cada ticket a la balda en la que recae físicamente
+
+    if len(baldas) != 3:
+        print(f"[ERROR A01] Se esperaban 3 baldas pero se detectaron {len(baldas)}. Abortando pipeline.")
+        return {}
+
+    # REGLA-A06: Sin tickets → abortar
+    if not tickets:
+        print("[ERROR A06] No se detectaron tickets en la imagen frontal. Abortando pipeline.")
+        return {}
+
+    # REGLA-A02 + A03: Asignar cada ticket a una balda
     balda_a_ticket = {}
-    
+
     for t_idx, t_det in tickets:
         t_y1, t_y2 = t_det['bbox'][1], t_det['bbox'][3]
         t_y_center = (t_y1 + t_y2) / 2.0
-        
+
         mejor_balda = -1
         max_overlap = -1
-        
+
         for b_order_idx, (b_idx, b_det) in enumerate(baldas):
             b_y1, b_y2 = b_det['bbox'][1], b_det['bbox'][3]
-            
-            # Verificación de inclusión del centro del ticket en la balda
+
+            # REGLA-A02: centro Y cae dentro de la balda
             if b_y1 <= t_y_center <= b_y2:
                 mejor_balda = b_order_idx
                 break
-                
-            # Fallback a overlap por si el centro queda fuera de las Y pero hay solapamiento
+
+            # REGLA-A03: fallback por solapamiento parcial
             overlap = max(0, min(t_y2, b_y2) - max(t_y1, b_y1))
             if overlap > max_overlap and overlap > 0:
                 max_overlap = overlap
                 mejor_balda = b_order_idx
-                
-        if mejor_balda != -1 and mejor_balda not in balda_a_ticket:
-            balda_a_ticket[mejor_balda] = t_idx
 
-    # Si no detectamos tickets emparejados, no podemos asignar nada
+        if mejor_balda == -1:
+            continue
+
+        # REGLA-A05: ticket duplicado en misma balda → conservar el primero
+        if mejor_balda in balda_a_ticket:
+            print(f"[WARN A05] Ticket duplicado en balda {mejor_balda}. "
+                  f"Conservando ticket idx={balda_a_ticket[mejor_balda]}, "
+                  f"descartando idx={t_idx}. Posible fallo de Mask R-CNN.")
+            continue
+
+        balda_a_ticket[mejor_balda] = t_idx
+
     if not balda_a_ticket:
+        print("[ERROR A06] No se pudo asignar ningún ticket a ninguna balda. Abortando.")
         return {}
-        
-    # 4. Lógica de dominancia y herencia (Reglas de negocio)
+
+    # REGLA-A04: Herencia de dominancia hacia abajo
     resultado = {t_idx: [] for t_idx, _ in tickets}
-    
-    # Encontrar el ticket "top" (situado más arriba) que asume el control inicialmente
-    indices_con_ticket = sorted(list(balda_a_ticket.keys()))
+
+    indices_con_ticket = sorted(balda_a_ticket.keys())
     ticket_dominante = balda_a_ticket[indices_con_ticket[0]]
-    
+
     for b_order_idx in range(len(baldas)):
-        # Si la balda tiene un ticket propio, este asume la dominancia a partir de ahora (hacia abajo)
         if b_order_idx in balda_a_ticket:
             ticket_dominante = balda_a_ticket[b_order_idx]
-            
-        # Asignar la balda actual al ticket dominante
         resultado[ticket_dominante].append(b_order_idx)
-        
-    # Filtrar tickets que no asumieron dominio
+
+    # Filtrar tickets que no dominan nada
     resultado = {k: v for k, v in resultado.items() if v}
-    
+
     return resultado
+
 
 def procesar_pareja_imagenes(det_frontal, det_trasera):
     """
-    Wrapper que demuestra cómo la asignación frontal se aplica al espacio Y 
-    de la imagen trasera para futuras detecciones de plantas.
-    
-    Args:
-        det_frontal (list): Detecciones bounding boxes imagen Frontal.
-        det_trasera (list): Detecciones bounding boxes imagen Trasera.
-        
-    Returns:
-        dict: Contiene la asignación lógica y las zonas Y útiles en Trasera.
+    Wrapper: calcula asignación frontal y proyecta al espacio Y trasero.
     """
-    # 1. Calculamos la asignación de tickets a baldas usando las reglas de la imagen Frontal
     asignacion = asignar_tickets_a_baldas(det_frontal)
-    
-    # 2. Localizamos las baldas en la Trasera ordenándolas por su Y de arriba a abajo
+
     baldas_trasera = [det for det in det_trasera if det.get('class', '').lower() == 'balda']
     baldas_trasera.sort(key=lambda x: x['bbox'][1])
-    
-    # 3. Aplicar al ESPACIO Y de la Trasera para que futuras detecciones sepan a quién pertenecen
+
     espacio_y_trasera_por_ticket = {}
-    
+
     for ticket_idx, baldas_dominadas in asignacion.items():
-        # Tomar baldas válidas para evitar IndexError en caso de fallos de Mask R-CNN
         indices_validos = [i for i in baldas_dominadas if i < len(baldas_trasera)]
-        
+
         if indices_validos:
-            # El rango Y dominado va desde el tope superior de su balda más alta 
-            # hasta el tope inferior de su balda más baja
             y_min = min(baldas_trasera[i]['bbox'][1] for i in indices_validos)
             y_max = max(baldas_trasera[i]['bbox'][3] for i in indices_validos)
-            
+
             espacio_y_trasera_por_ticket[ticket_idx] = {
                 'indices_baldas_heredadas': indices_validos,
                 'rango_y_min': y_min,
                 'rango_y_max': y_max
             }
-            
+
     return {
         "asignacion_base": asignacion,
         "zonas_evaluacion_trasera": espacio_y_trasera_por_ticket
     }
 
-def contar_articulos(det_frontal, det_trasera, asignacion_base, img_frontal=None, clasificador=None):
+
+# =============================================================================
+# BLOQUE B — contar_articulos()
+# Reglas: B01 a B09
+# =============================================================================
+
+UMBRAL_CONFIANZA_BAJA = 0.5  # B09: por debajo de esto se marca confianza_baja
+
+def contar_articulos(det_frontal, det_trasera, asignacion_base,
+                     img_frontal=None, img_trasera=None, clasificador=None):
     """
-    Cuenta los artículos por balda realizando un mapeo en espejo (Flip X) 
-    de las detecciones traseras sobre el sistema de coordenadas de las baldas frontales.
-    
-    Args:
-        det_frontal: Detecciones frontales.
-        det_trasera: Detecciones traseras.
-        asignacion_base: Mapeo ticket -> baldas.
-        img_frontal: (Opcional) Imagen frontal BGR para hacer crops y clasificar.
-        clasificador: (Opcional) Tupla (model, transform, class_names, device) del ConvNeXt.
+    Cuenta artículos aplicando mapeo en espejo BIDIRECCIONAL y clasificación.
+    Implementa reglas B01-B09 de REGLAS_CONTEO.md.
+
+    Cambios respecto a la versión anterior:
+    - Procesa Flores/Planta de AMBAS vistas (B01b)
+    - Procesa tallo_grupo de AMBAS vistas (B02b)
+    - Umbral B01 con fallback al 40% (B01c)
+    - No muta dicts originales (copia con {**det})
+    - Marca confianza_baja en el JSON (B09)
     """
     import math
     import cv2
 
-    # Separar y ordenar baldas de arriba (Y menor) hacia abajo (Y mayor)
+    # Separar y ordenar baldas
     baldas_f = [d for d in det_frontal if d.get('class', '').lower() == 'balda']
     baldas_f.sort(key=lambda x: x['bbox'][1])
-    
+
     baldas_b = [d for d in det_trasera if d.get('class', '').lower() == 'balda']
     baldas_b.sort(key=lambda x: x['bbox'][1])
 
-    # Utilidad para encontrar en qué balda cae el centro de una bbox dada
+    # --- REGLA-B01: Ubicación con umbral principal 60%, fallback 40% ---
     def ubicar_en_balda(bbox, lista_baldas):
-        y1, y2 = bbox[1], bbox[3]
-        y_center = (y1 + y2) / 2.0
-        mejor_balda, max_overlap = -1, -1
-        
+        """
+        >= 60%: asigna normalmente.
+        >= 40% y < 60%: asigna con warning (item sobresale pero mayoritariamente está dentro).
+        < 40%: no asigna, notifica.
+        """
+        item_y1, item_y2 = bbox[1], bbox[3]
+        item_h = item_y2 - item_y1
+        if item_h <= 0:
+            return -1
+
+        mejor_balda = -1
+        mejor_ratio = 0.0
+
         for b_idx, b_det in enumerate(lista_baldas):
             b_y1, b_y2 = b_det['bbox'][1], b_det['bbox'][3]
-            if b_y1 <= y_center <= b_y2:
-                return b_idx
-            # Fallback por solapamiento
-            overlap = max(0, min(y2, b_y2) - max(y1, b_y1))
-            if overlap > max_overlap and overlap > 0:
-                max_overlap = overlap
+            overlap = max(0, min(item_y2, b_y2) - max(item_y1, b_y1))
+            ratio = overlap / item_h
+
+            if ratio > mejor_ratio:
+                mejor_ratio = ratio
                 mejor_balda = b_idx
-        return mejor_balda
 
-    # Variables para agrupar las masas verdes (Flores y Plantas) y los Tallos por cada balda
-    # Estructura: dict[b_idx] = lista_de_detecciones
+        if mejor_ratio >= 0.60:
+            return mejor_balda
+        elif mejor_ratio >= 0.40:
+            print(f"  [WARN B01c] Item Y=[{item_y1:.0f}-{item_y2:.0f}] solo {mejor_ratio*100:.0f}% "
+                  f"en balda {mejor_balda} (sobresale). Asignado con fallback 40%.")
+            return mejor_balda
+        else:
+            print(f"  [WARN B01] Item Y=[{item_y1:.0f}-{item_y2:.0f}] no alcanza 40% en ninguna balda "
+                  f"(mejor: {mejor_ratio*100:.0f}%). Queda sin asignar.")
+            return -1
+
+    # =====================================================================
+    # RECOLECCIÓN BIDIRECCIONAL (B01b + B02b)
+    # =====================================================================
     masas_por_balda = {i: [] for i in range(len(baldas_f))}
-    tallos_por_balda = {i: [] for i in range(len(baldas_b))}
 
-    # Llenar las dicciones basándonos en la vista de cada cámara
+    # 1. Flores/Planta FRONTALES → baldas frontales (vista='frontal')
     for det in det_frontal:
         clase = det.get('class', '').lower()
         if clase in ['flores', 'planta']:
             b_idx = ubicar_en_balda(det['bbox'], baldas_f)
             if b_idx != -1:
-                det['tallos_asociados'] = 0 # Inicializamos contador
-                masas_por_balda[b_idx].append(det)
+                masa = {**det, 'tallos_asociados': 0, 'vista': 'frontal'}
+                masas_por_balda[b_idx].append(masa)
 
+    # 2. Flores/Planta TRASERAS → baldas traseras → flip X → espacio frontal (B01b)
     for det in det_trasera:
         clase = det.get('class', '').lower()
-        if clase in ['tallo_grupo']:
+        if clase in ['flores', 'planta']:
+            b_idx = ubicar_en_balda(det['bbox'], baldas_b)
+            if b_idx != -1 and b_idx < len(baldas_f):
+                b_f = baldas_f[b_idx]['bbox']
+                b_b = baldas_b[b_idx]['bbox']
+                ancho_f = b_f[2] - b_f[0]
+                ancho_b = b_b[2] - b_b[0]
+                cx_b = (det['bbox'][0] + det['bbox'][2]) / 2.0
+                pct_inv = 1.0 - ((cx_b - b_b[0]) / ancho_b) if ancho_b > 0 else 0.5
+                cx_proy = b_f[0] + pct_inv * ancho_f
+                cy_proy = (det['bbox'][1] + det['bbox'][3]) / 2.0
+
+                masa = {**det, 'tallos_asociados': 0, 'vista': 'trasera',
+                        'cx_proyectado_f': cx_proy, 'cy_proyectado_f': cy_proy}
+                masas_por_balda[b_idx].append(masa)
+
+    # 3. tallo_grupo TRASEROS → baldas traseras
+    tallos_traseros_por_balda = {i: [] for i in range(len(baldas_b))}
+    for det in det_trasera:
+        clase = det.get('class', '').lower()
+        if clase == 'tallo_grupo':
             b_idx = ubicar_en_balda(det['bbox'], baldas_b)
             if b_idx != -1:
-                tallos_por_balda[b_idx].append(det)
+                tallos_traseros_por_balda[b_idx].append(det)
 
-    # =========================================================================
-    # LÓGICA CORE: MAPEO EN ESPEJO (TRASERO -> FRONTAL)
-    # -------------------------------------------------------------------------
+    # 4. tallo_grupo FRONTALES → baldas frontales (B02b)
+    tallos_frontales_por_balda = {i: [] for i in range(len(baldas_f))}
+    for det in det_frontal:
+        clase = det.get('class', '').lower()
+        if clase == 'tallo_grupo':
+            b_idx = ubicar_en_balda(det['bbox'], baldas_f)
+            if b_idx != -1:
+                tallos_frontales_por_balda[b_idx].append(det)
+
+    # =====================================================================
+    # REGLA-B02 + B03 + B04: Mapeo en espejo y reparto de tallos
+    # =====================================================================
     for b_idx in range(len(baldas_f)):
-        # Si falta la balda opuesta, nos saltamos el mapeo geométrico fino
+        # REGLA-B03: balda sin espejo
         if b_idx >= len(baldas_b):
+            print(f"[ERROR B03] Balda frontal idx={b_idx} no tiene espejo en trasera. Fallo de Mask R-CNN.")
             continue
-            
-        b_f = baldas_f[b_idx]['bbox']  # [x1, y1, x2, y2]
+
+        b_f = baldas_f[b_idx]['bbox']
         b_b = baldas_b[b_idx]['bbox']
-        
+
         ancho_f = b_f[2] - b_f[0]
         ancho_b = b_b[2] - b_b[0]
-        
-        lista_masas = masas_por_balda[b_idx]
-        lista_tallos = tallos_por_balda[b_idx].copy()
-        
-        # 1. Anotamos la proyección (cx, cy) frontal dentro de cara tallo
-        for tallo in lista_tallos:
-            t_box = tallo['bbox']
-            cx_tallo_b = (t_box[0] + t_box[2]) / 2.0
-            
-            porcentaje_x_invertido = 1.0 - ((cx_tallo_b - b_b[0]) / ancho_b)
-            tallo['cx_proyectado_f'] = b_f[0] + (porcentaje_x_invertido * ancho_f)
-            tallo['cy_proyectado_f'] = (t_box[1] + t_box[3]) / 2.0
 
-        # Algoritmo de Reparto Justo en Dos Fases:
-        import math
-        
-        # FASE 1: Garantizar que ninguna flor/planta se quede con 0 tallos, 
-        # asignando el tallo MÁS CERCANO posible a cada flor vacía.
-        while lista_tallos and any(m['tallos_asociados'] == 0 for m in lista_masas):
-            mejor_distancia = float('inf')
-            mejor_par = None # (masa_index, tallo)
-            
-            for m_idx, masa in enumerate(lista_masas):
-                if masa['tallos_asociados'] > 0:
-                    continue # Esta flor ya tiene su tallo
-                    
-                m_box = masa['bbox']
-                cx_masa = (m_box[0] + m_box[2]) / 2.0
-                cy_masa = (m_box[1] + m_box[3]) / 2.0
-                
-                for tallo in lista_tallos:
-                    dist = math.hypot(tallo['cx_proyectado_f'] - cx_masa, tallo['cy_proyectado_f'] - cy_masa)
-                    if dist < mejor_distancia:
-                        mejor_distancia = dist
-                        mejor_par = (masa, tallo)
-                        
-            if mejor_par is not None:
-                # Damos el tallo a la flor/planta y quitamos el tallo del pool disponible
-                mejor_par[0]['tallos_asociados'] += 1
-                lista_tallos.remove(mejor_par[1])
-                
-        # FASE 2: Los tallos que sobren (porque había más tallos que flores en la balda)
-        # se asignan ahora sí libremente a la flor/planta más cercana sin restricciones, engordando sus números.
-        for tallo in lista_tallos:
-            mejor_masa = None
-            distancia_min = float('inf')
-            
-            for masa in lista_masas:
-                m_box = masa['bbox']
-                cx_masa = (m_box[0] + m_box[2]) / 2.0
-                cy_masa = (m_box[1] + m_box[3]) / 2.0
-                dist = math.hypot(tallo['cx_proyectado_f'] - cx_masa, tallo['cy_proyectado_f'] - cy_masa)
-                
-                if dist < distancia_min:
-                    distancia_min = dist
-                    mejor_masa = masa
-                    
-            if mejor_masa is not None:
-                mejor_masa['tallos_asociados'] += 1
-                
-    # =========================================================================
-    
-    # --- DIAGNÓSTICO: mostrar qué se encontró en cada balda ---
-    print("\n[DEBUG] Resumen de detecciones por balda frontal:")
+        lista_masas = masas_por_balda[b_idx]
+
+        # --- Combinar tallos de AMBAS vistas proyectados a espacio frontal ---
+        tallos_combinados = []
+
+        # Tallos traseros → flip X al espacio frontal (B02)
+        for tallo in tallos_traseros_por_balda.get(b_idx, []):
+            t = {**tallo}
+            cx_b = (t['bbox'][0] + t['bbox'][2]) / 2.0
+            pct_inv = 1.0 - ((cx_b - b_b[0]) / ancho_b) if ancho_b > 0 else 0.5
+            t['cx_proyectado_f'] = b_f[0] + (pct_inv * ancho_f)
+            t['cy_proyectado_f'] = (t['bbox'][1] + t['bbox'][3]) / 2.0
+            tallos_combinados.append(t)
+
+        # Tallos frontales → ya están en espacio frontal (B02b)
+        for tallo in tallos_frontales_por_balda.get(b_idx, []):
+            t = {**tallo}
+            t['cx_proyectado_f'] = (t['bbox'][0] + t['bbox'][2]) / 2.0
+            t['cy_proyectado_f'] = (t['bbox'][1] + t['bbox'][3]) / 2.0
+            tallos_combinados.append(t)
+
+        # --- Obtener centro de cada masa en espacio frontal ---
+        def centro_masa(masa):
+            if masa.get('vista') == 'trasera':
+                return masa['cx_proyectado_f'], masa['cy_proyectado_f']
+            m_box = masa['bbox']
+            return (m_box[0] + m_box[2]) / 2.0, (m_box[1] + m_box[3]) / 2.0
+
+        # REGLA-B04: Comprobar estado y repartir
+        tiene_masas = len(lista_masas) > 0
+        tiene_tallos = len(tallos_combinados) > 0
+
+        if tiene_masas and tiene_tallos:
+            # ✅ Masas + ✅ Tallos → asignar cada tallo a masa más cercana
+
+            # Fase 1: garantizar al menos 1 tallo por masa
+            tallos_restantes = tallos_combinados.copy()
+            while tallos_restantes and any(m['tallos_asociados'] == 0 for m in lista_masas):
+                mejor_dist = float('inf')
+                mejor_par = None
+
+                for masa in lista_masas:
+                    if masa['tallos_asociados'] > 0:
+                        continue
+                    cx_m, cy_m = centro_masa(masa)
+
+                    for tallo in tallos_restantes:
+                        dist = math.hypot(tallo['cx_proyectado_f'] - cx_m,
+                                          tallo['cy_proyectado_f'] - cy_m)
+                        if dist < mejor_dist:
+                            mejor_dist = dist
+                            mejor_par = (masa, tallo)
+
+                if mejor_par:
+                    mejor_par[0]['tallos_asociados'] += 1
+                    tallos_restantes.remove(mejor_par[1])
+                else:
+                    break
+
+            # Fase 2: tallos sobrantes → masa más cercana sin restricción
+            for tallo in tallos_restantes:
+                mejor_masa = None
+                dist_min = float('inf')
+                for masa in lista_masas:
+                    cx_m, cy_m = centro_masa(masa)
+                    dist = math.hypot(tallo['cx_proyectado_f'] - cx_m,
+                                      tallo['cy_proyectado_f'] - cy_m)
+                    if dist < dist_min:
+                        dist_min = dist
+                        mejor_masa = masa
+                if mejor_masa:
+                    mejor_masa['tallos_asociados'] += 1
+
+        elif tiene_masas and not tiene_tallos:
+            # ✅ Masas + ❌ Tallos → REGLA-B05
+            pass  # unidades_finales = max(1, tallos) en JSON
+
+        elif not tiene_masas and tiene_tallos:
+            # ❌ Masas + ✅ Tallos
+            print(f"  [WARN B04] Balda idx={b_idx}: {len(tallos_combinados)} tallos sin masa asignable.")
+
+        # ❌ + ❌ → nada
+
+    # =====================================================================
+
+    # --- Diagnóstico ---
+    print("\n[DEBUG] Resumen por balda frontal:")
     baldas_cubiertas = set()
     for t_idx, b_indices in asignacion_base.items():
         for b_idx in b_indices:
             baldas_cubiertas.add(b_idx)
-    
+
     for b_idx in range(len(baldas_f)):
         n_masas = len(masas_por_balda[b_idx])
+        n_masas_f = sum(1 for m in masas_por_balda[b_idx] if m.get('vista') == 'frontal')
+        n_masas_b = sum(1 for m in masas_por_balda[b_idx] if m.get('vista') == 'trasera')
+        n_tallos_b = len(tallos_traseros_por_balda.get(b_idx, []))
+        n_tallos_f = len(tallos_frontales_por_balda.get(b_idx, []))
         en_ticket = "✓" if b_idx in baldas_cubiertas else "✗ SIN TICKET"
-        items_str = ", ".join([f"{m['class']}" for m in masas_por_balda[b_idx]])
-        print(f"  Balda idx={b_idx} (Y: {baldas_f[b_idx]['bbox'][1]:.0f}-{baldas_f[b_idx]['bbox'][3]:.0f}): "
-              f"{n_masas} items [{items_str}] {en_ticket}")
-    
-    # Items que no cayeron en ninguna balda
-    total_flores_planta = sum(1 for d in det_frontal if d.get('class','').lower() in ['flores','planta'])
+        items_str = ", ".join([f"{m['class']}({m.get('vista','?')[0]})" for m in masas_por_balda[b_idx]])
+        print(f"  Balda idx={b_idx}: {n_masas} masas ({n_masas_f}F+{n_masas_b}B) [{items_str}], "
+              f"{n_tallos_b+n_tallos_f} tallos ({n_tallos_f}F+{n_tallos_b}B)  {en_ticket}")
+
+    total_items_f = sum(1 for d in det_frontal if d.get('class', '').lower() in ['flores', 'planta'])
+    total_items_b = sum(1 for d in det_trasera if d.get('class', '').lower() in ['flores', 'planta'])
     total_asignadas = sum(len(v) for v in masas_por_balda.values())
-    if total_asignadas < total_flores_planta:
-        print(f"  [!] {total_flores_planta - total_asignadas} flores/plantas no cayeron en ninguna balda")
+    if total_asignadas < total_items_f + total_items_b:
+        print(f"  [!] {total_items_f + total_items_b - total_asignadas} items no cayeron en ninguna balda")
     print()
-    
-    # Preparar el JSON final estructurado por Tickets y sus Baldas dominadas
-    t_idx_order = sorted(asignacion_base.keys(), key=lambda idx: det_frontal[idx]['bbox'][1], reverse=True)
+
+    # --- Construir JSON final ---
+    t_idx_order = sorted(asignacion_base.keys(),
+                         key=lambda idx: det_frontal[idx]['bbox'][1], reverse=True)
     ticket_mapping = {t_idx: i + 1 for i, t_idx in enumerate(t_idx_order)}
-    total_baldas = len(baldas_f)
-    
+    total_baldas_n = len(baldas_f)
+
     resultado_json = {}
-    
+
     for t_idx, b_indices in asignacion_base.items():
         ticket_key = f"Ticket_{ticket_mapping[t_idx]}"
         resultado_json[ticket_key] = {}
-        
-        # Ordenamos las baldas de abajo a arriba para la salida visual
+
         b_indices_sorted = sorted(b_indices, reverse=True)
-        
+
         for b_idx in b_indices_sorted:
-            balda_key = f"Balda_{total_baldas - b_idx}"
-            
-            # Recolectar datos individuales de cada masa en esta balda
-            items_raw = []  # Lista de (producto_id, tipo, tallos, unidades, confianza)
+            balda_key = f"Balda_{total_baldas_n - b_idx}"
+
+            items_raw = []
             contador_indices = {'Flores': 1, 'Planta': 1}
-            
+
             for masa in masas_por_balda[b_idx]:
-                clase_str = masa['class'].capitalize() # "Flores" o "Planta"
-                
+                clase_str = masa['class'].capitalize()
+
                 tallos = masa['tallos_asociados']
+                # REGLA-B05: sin tallos → 1 unidad por defecto
                 unidades_finales = max(1, tallos)
-                
-                # --- Clasificación por especie con ConvNeXt ---
+
+                # REGLA-B06 + B07: Clasificación ConvNeXt
+                # Elegir imagen fuente según la vista de la masa
+                vista = masa.get('vista', 'frontal')
+                img_crop_src = img_trasera if vista == 'trasera' else img_frontal
+
                 producto_id = None
                 confianza = None
-                if img_frontal is not None and clasificador is not None:
+                if img_crop_src is not None and clasificador is not None:
                     cnx_model, cnx_transform, cnx_classes, cnx_device = clasificador
-                    bbox = masa['bbox']  # [x1, y1, x2, y2]
+                    bbox = masa['bbox']
                     x1 = max(0, int(bbox[0]))
                     y1 = max(0, int(bbox[1]))
-                    x2 = min(img_frontal.shape[1], int(bbox[2]))
-                    y2 = min(img_frontal.shape[0], int(bbox[3]))
-                    
-                    crop = img_frontal[y1:y2, x1:x2]
+                    x2 = min(img_crop_src.shape[1], int(bbox[2]))
+                    y2 = min(img_crop_src.shape[0], int(bbox[3]))
+
+                    crop = img_crop_src[y1:y2, x1:x2]
                     if crop.size > 0:
                         from PIL import Image as PILImage
                         import torch as _torch
@@ -328,23 +425,23 @@ def contar_articulos(det_frontal, det_trasera, asignacion_base, img_frontal=None
                         crop_rgb = cv2.rotate(crop_rgb, cv2.ROTATE_90_COUNTERCLOCKWISE)
                         pil_crop = PILImage.fromarray(crop_rgb)
                         input_t = cnx_transform(pil_crop).unsqueeze(0).to(cnx_device)
-                        
+
                         with _torch.no_grad():
                             output = cnx_model(input_t)
                             probs = _torch.softmax(output, dim=1)[0]
                             top_prob, top_idx = probs.max(0)
-                        
+
                         producto_id = cnx_classes[top_idx.item()]
                         confianza = top_prob.item()
-                
-                # Si no hay ConvNeXt, usamos Flores_1/Planta_1 como ID
+
+                # REGLA-B07: sin clasificador
                 if producto_id is None:
                     producto_id = f"{clase_str}_{contador_indices[clase_str]}"
                     contador_indices[clase_str] += 1
-                
+
                 items_raw.append((producto_id, clase_str.lower(), tallos, unidades_finales, confianza))
-            
-            # Agrupar por producto_id
+
+            # REGLA-B08: Agrupar por producto_id
             items_en_esta_balda = {}
             for prod_id, tipo, tallos, unidades, conf in items_raw:
                 if prod_id not in items_en_esta_balda:
@@ -353,22 +450,25 @@ def contar_articulos(det_frontal, det_trasera, asignacion_base, img_frontal=None
                         "detecciones": 0,
                         "tallos_totales": 0,
                         "unidades_totales": 0,
-                        "_confianzas": []  # temporal, se promediará después
+                        "_confianzas": []
                     }
                 items_en_esta_balda[prod_id]["detecciones"] += 1
                 items_en_esta_balda[prod_id]["tallos_totales"] += tallos
                 items_en_esta_balda[prod_id]["unidades_totales"] += unidades
                 if conf is not None:
                     items_en_esta_balda[prod_id]["_confianzas"].append(conf)
-            
-            # Calcular confianza media y limpiar campo temporal
+
             for prod_id, data in items_en_esta_balda.items():
                 confs = data.pop("_confianzas")
                 if confs:
-                    data["confianza_media"] = round(sum(confs) / len(confs), 3)
-            
+                    media = round(sum(confs) / len(confs), 3)
+                    data["confianza_media"] = media
+                    # REGLA-B09: marcar confianza baja
+                    if media < UMBRAL_CONFIANZA_BAJA:
+                        data["confianza_baja"] = True
+
             resultado_json[ticket_key][balda_key] = items_en_esta_balda
-            
+
     return resultado_json, ticket_mapping
 
 if __name__ == "__main__":
@@ -523,7 +623,7 @@ if __name__ == "__main__":
     # 7. Conteo por zonas + clasificación por especie
     conteo_final, ticket_mapping = contar_articulos(
         det_f, det_b, resultado['asignacion_base'],
-        img_frontal=img_f, clasificador=clasificador
+        img_frontal=img_f, img_trasera=img_b, clasificador=clasificador
     )
 
     print("\n" + "="*50)

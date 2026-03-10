@@ -26,20 +26,24 @@ import cv2
 # =============================================================================
 
 # Carpeta raíz del export de Roboflow (contiene train/, valid/, test/)
-ROBOFLOW_DIR = os.path.join("data", "Proyecto_H.v4i.coco(no_aug)")
+ROBOFLOW_DIR = os.path.join("data", "Proyecto_H-TRASERAS_V2.coco")
 
 # Splits a procesar (cada uno tiene sus imágenes + _annotations.coco.json dentro)
 SPLITS = ["train", "valid", "test"]
 
 # Carpeta de salida para los crops
-OUTPUT_DIR = os.path.join("data", "crops_clasificacion")
+OUTPUT_DIR = os.path.join("data", "crops_clasificacion_v2")
 
 # Nombres de categorías que queremos recortar (tal cual aparecen en Roboflow)
 TARGET_CATEGORY_NAMES = {"Flores", "Planta"}
 
+# IDs de categoría a IGNORAR (ej. superclases duplicadas de Roboflow)
+# En FRONTALES_V2, id=0 es una superclase "Flores" que no queremos
+EXCLUDE_CATEGORY_IDS = {0}
+
 # Tamaño mínimo del crop en píxeles (ancho o alto). Si el crop es más pequeño
 # que esto en cualquier dimensión, se descarta (probablemente es ruido).
-MIN_CROP_SIZE = 10
+MIN_CROP_SIZE = 1
 
 
 # =============================================================================
@@ -78,8 +82,13 @@ def process_split(roboflow_dir, split, output_dir, target_names, min_crop_size, 
     crop_global_id = crop_id_start
 
     for ann in data.get("annotations", []):
+        # Saltar IDs excluidos (superclases duplicadas)
+        cat_id = ann.get("category_id")
+        if cat_id in EXCLUDE_CATEGORY_IDS:
+            continue
+
         # Resolver nombre de categoría desde el ID de Roboflow
-        cat_name = cat_id_to_name.get(ann.get("category_id"), "")
+        cat_name = cat_id_to_name.get(cat_id, "")
         if cat_name not in target_names:
             continue
 
@@ -113,7 +122,7 @@ def process_split(roboflow_dir, split, output_dir, target_names, min_crop_size, 
         if len(bbox) != 4:
             continue
 
-        x, y, w, h = [int(round(v)) for v in bbox]
+        x, y, w, h = [int(round(float(v))) for v in bbox]
 
         # Clampear la bbox a los límites de la imagen
         x1 = max(0, x)

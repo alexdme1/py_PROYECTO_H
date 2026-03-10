@@ -1,7 +1,7 @@
 """
 Test Area — Inference App (Mask R-CNN + ConvNeXt)
 Run with:
-    /home/servi2/Enviroments/main_venv/bin/python test_area/app.py
+    python test_area/app.py
 """
 
 import os
@@ -36,7 +36,7 @@ st.set_page_config(
 )
 
 # ── Rutas base ─────────────────────────────────────────────────────
-BASE_DIR       = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BASE_DIR       = "/home/servi2/Escritorio/py_PROYECTO_H"
 MASKRCNN_BASE  = os.path.join(BASE_DIR, "models", "maskrcnn")
 CONVNEXT_BASE  = os.path.join(BASE_DIR, "models", "convnext")
 COCO_JSON      = os.path.join(BASE_DIR, "data", "coco_unified", "annotations", "test.json")
@@ -396,7 +396,7 @@ else:
                     resultado = procesar_pareja_imagenes(det_f, det_b)
                     conteo_final, ticket_mapping = contar_articulos(
                         det_f, det_b, resultado['asignacion_base'],
-                        img_frontal=img_f, clasificador=clasificador
+                        img_frontal=img_f, img_trasera=img_b, clasificador=clasificador
                     )
 
                     # Visualizaciones con Detectron2
