@@ -6,7 +6,7 @@ Dataset en formato ImageFolder (subcarpetas = clases).
 Lanza TensorBoard automáticamente al arrancar.
 
 Uso:
-    /home/servi2/Enviroments/main_venv/bin/python scripts/07_train_convnext.py
+    python scripts/07_train_convnext.py
 """
 
 import os

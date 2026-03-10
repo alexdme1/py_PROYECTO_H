@@ -9,7 +9,7 @@ Genera:
   - Ejemplos de predicciones erróneas guardadas como imágenes
 
 Uso:
-    /home/servi2/Enviroments/main_venv/bin/python scripts/08_eval_convnext.py
+    python scripts/08_eval_convnext.py
 """
 
 import os
