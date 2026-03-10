@@ -12,7 +12,7 @@ from streamlit.runtime import exists as _st_running
 if not _st_running():
     import subprocess
     sys.exit(subprocess.run([
-        "/home/servi2/Enviroments/main_venv/bin/streamlit", "run",
+        sys.executable, "-m", "streamlit", "run",
         os.path.abspath(__file__),
         "--server.headless=false"
     ]).returncode)
@@ -36,7 +36,7 @@ st.set_page_config(
 )
 
 # ── Rutas base ─────────────────────────────────────────────────────
-BASE_DIR       = "/home/servi2/Escritorio/py_PROYECTO_H"
+BASE_DIR       = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MASKRCNN_BASE  = os.path.join(BASE_DIR, "models", "maskrcnn")
 CONVNEXT_BASE  = os.path.join(BASE_DIR, "models", "convnext")
 COCO_JSON      = os.path.join(BASE_DIR, "data", "coco_unified", "annotations", "test.json")
