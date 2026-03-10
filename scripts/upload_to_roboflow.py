@@ -14,7 +14,7 @@ from roboflow import Roboflow
 # CONFIGURACIÓN (MODIFICAR AQUÍ)
 # =============================================================================
 
-API_KEY = os.environ.get("ROBOFLOW_API_KEY", "EN7iQhMMAT3BFZUkJhUb")  # Configura: export ROBOFLOW_API_KEY="tu_key"
+API_KEY = os.environ.get("ROBOFLOW_API_KEY", "casi_crack!")  # Configura: export ROBOFLOW_API_KEY="tu_key"
 WORKSPACE = "floresverdnatura"
 PROJECT = "proyecto_h_clas"
 

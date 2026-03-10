@@ -396,7 +396,7 @@ else:
                     resultado = procesar_pareja_imagenes(det_f, det_b)
                     conteo_final, ticket_mapping = contar_articulos(
                         det_f, det_b, resultado['asignacion_base'],
-                        img_frontal=img_f, clasificador=clasificador
+                        img_frontal=img_f, img_trasera=img_b, clasificador=clasificador
                     )
 
                     # Visualizaciones con Detectron2
