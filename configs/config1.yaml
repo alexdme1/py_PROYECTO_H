@@ -49,11 +49,13 @@ MODEL:
 INPUT:
   # -------------------------------------------------------------------
   # RESOLUCIÓN Y AUGMENTATIONS BÁSICAS
+  # Si el dataset ya viene reescalado de Roboflow, lo ideal es fijar el
+  # tamaño a 1024 para optimizar memoria y precisión (sweet spot).
   # -------------------------------------------------------------------
-  MIN_SIZE_TRAIN: [1000, 1080, 1150]
-  MAX_SIZE_TRAIN: 2000
-  MIN_SIZE_TEST: 1080
-  MAX_SIZE_TEST: 2000
+  MIN_SIZE_TRAIN: [1024]
+  MAX_SIZE_TRAIN: 1024
+  MIN_SIZE_TEST: 1024
+  MAX_SIZE_TEST: 1024
   RANDOM_FLIP: "horizontal"
 
   # -------------------------------------------------------------------

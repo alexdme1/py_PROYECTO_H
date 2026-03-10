@@ -6,11 +6,11 @@ import os
 import sys
 
 
-def asignar_tickets_a_baldas(detecciones_frontales, total_baldas=3):
+def asignar_tickets_a_baldas(detecciones_frontales):
     """Importa y ejecuta desde 05_conteo."""
     from importlib import import_module
     mod = _get_conteo_module()
-    return mod.asignar_tickets_a_baldas(detecciones_frontales, total_baldas)
+    return mod.asignar_tickets_a_baldas(detecciones_frontales)
 
 
 def procesar_pareja_imagenes(det_frontal, det_trasera):
