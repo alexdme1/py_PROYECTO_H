@@ -18,9 +18,11 @@ def procesar_pareja_imagenes(det_frontal, det_trasera):
     return mod.procesar_pareja_imagenes(det_frontal, det_trasera)
 
 
-def contar_articulos(det_frontal, det_trasera, asignacion_base, img_frontal=None, clasificador=None):
+def contar_articulos(det_frontal, det_trasera, asignacion_base,
+                     img_frontal=None, img_trasera=None, clasificador=None):
     mod = _get_conteo_module()
-    return mod.contar_articulos(det_frontal, det_trasera, asignacion_base, img_frontal, clasificador)
+    return mod.contar_articulos(det_frontal, det_trasera, asignacion_base,
+                                img_frontal, img_trasera, clasificador)
 
 
 _cached_module = None

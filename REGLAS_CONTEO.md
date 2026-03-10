@@ -66,11 +66,22 @@
 
 ---
 
-### REGLA-B01 · Ubicación de items en balda
-- **Cuándo:** por cada detección de clase `Flores`, `Planta` o `tallo_grupo`, tanto en frontal como en trasera
-- **Condición:** al menos el 60% de la bbox del item debe estar dentro del área detectada de una balda
-- **Decisión:** asignar el item a esa balda; si no cumple el 60% en ninguna balda, notificar por terminal que el item queda sin asignar
-- **Razón:** asignar absolutamente todos los items detectados a su balda correspondiente; no descartar ninguno silenciosamente
+### REGLA-B01 · Ubicación de items en balda (umbral 60%, fallback 40%)
+- **Cuándo:** por cada detección de clase `Flores`, `Planta` o `tallo_grupo`, **tanto en frontal como en trasera**
+- **Condición:**
+  - ≥ 60% de la bbox del item dentro de una balda → asignar normalmente
+  - ≥ 40% y < 60% → asignar con warning (item sobresale, pero mayoritariamente está dentro)
+  - < 40% → no asignar, notificar por terminal
+- **Decisión:** asignar el item a la balda con mayor ratio de solapamiento si cumple el umbral mínimo
+- **Razón:** items como flores colgantes pueden sobresalir de la balda; el fallback del 40% evita pérdidas silenciosas manteniendo un filtro contra falsos positivos
+
+---
+
+### REGLA-B01b · Recolección bidireccional de masas
+- **Cuándo:** antes del reparto de tallos
+- **Condición:** existen detecciones de `Flores` o `Planta` **en la imagen trasera**
+- **Decisión:** ubicar las masas traseras en baldas traseras, aplicar flip X para proyectar su centro al espacio frontal, e incorporarlas al pool de masas de la misma balda. Para la clasificación ConvNeXt, el crop se toma de la imagen trasera (no la frontal)
+- **Razón:** las cámaras frontal y trasera capturan ángulos complementarios; flores visibles solo desde atrás (ej. Gerberas colgantes) no deben perderse
 
 ---
 
@@ -79,6 +90,14 @@
 - **Condición:** existe balda en la vista contraria con el mismo índice (debe ocurrir siempre)
 - **Decisión:** invertir la posición X del tallo dentro de su balda y proyectarla al espacio X de la balda en la vista contraria
 - **Razón:** las cámaras frontal y trasera ven el carro en espejo horizontal entre sí
+
+---
+
+### REGLA-B02b · Tallos frontales
+- **Cuándo:** al recolectar tallos para el reparto
+- **Condición:** existen detecciones de `tallo_grupo` **en la imagen frontal**
+- **Decisión:** ubicarlos en baldas frontales; como ya están en espacio frontal, no necesitan flip X. Se combinan con los tallos traseros proyectados antes del reparto
+- **Razón:** los tallos pueden ser visibles desde ambas vistas; no ignorar los detectados en la frontal
 
 ---
 
@@ -93,33 +112,34 @@
 ### REGLA-B04 · Reparto de tallos
 - **Cuándo:** antes de repartir, comprobar el estado de cada balda
 - **Condición — 4 casos posibles:**
-  - ✅ Masas + ✅ Tallos → asignar cada tallo a la masa más cercana dentro de la misma balda (distancia euclidiana); todos los tallos deben quedar asignados
+  - ✅ Masas + ✅ Tallos → asignar cada tallo a la masa más cercana dentro de la misma balda (distancia euclidiana en espacio frontal); todos los tallos deben quedar asignados
   - ✅ Masas + ❌ Tallos → aplicar REGLA-B05
   - ❌ Masas + ✅ Tallos → notificar por terminal: tallos sin masa asignable en esta balda
   - ❌ Masas + ❌ Tallos → balda vacía, no hacer nada
+- **Nota:** los tallos combinados incluyen tanto los traseros (proyectados via flip X) como los frontales (ya en espacio frontal)
 - **Razón:** comprobar el estado antes de repartir evita lógica redundante y garantiza que ningún tallo quede sin asignar silenciosamente
 
 ---
 
 ### REGLA-B05 · Masa sin tallos
 - **Cuándo:** al finalizar el reparto de REGLA-B04
-- **Condición:** `tallos_asociados == 0` — no había tallos en la balda desde la vista contraria
+- **Condición:** `tallos_asociados == 0` — no había tallos en la balda desde ninguna vista
 - **Decisión:** asignar `unidades_finales = 1` automáticamente
-- **Razón:** especialmente para flores, si no se detecta tallo desde la vista contraria se asume falta de visibilidad; 1 unidad es el mínimo conservador
+- **Razón:** especialmente para flores, si no se detecta tallo desde ninguna vista se asume falta de visibilidad; 1 unidad es el mínimo conservador
 
 ---
 
 ### REGLA-B06 · Clasificación por especie con ConvNeXt
 - **Cuándo:** hay clasificador disponible y la masa tiene un crop válido
-- **Condición:** `img_frontal is not None` y `clasificador is not None` y `crop.size > 0`
-- **Decisión:** rotar crop 90° CCW, inferir con ConvNeXt, usar `producto_id` = clase predicha
-- **Razón:** la imagen fue capturada en orientación rotada; la corrección es necesaria para que el clasificador funcione correctamente
+- **Condición:** imagen fuente disponible y `clasificador is not None` y `crop.size > 0`
+- **Decisión:** rotar crop 90° CCW, inferir con ConvNeXt, usar `producto_id` = clase predicha. **La imagen fuente depende de la vista de la masa**: si `vista='frontal'` se cropea de `img_frontal`, si `vista='trasera'` se cropea de `img_trasera`
+- **Razón:** la imagen fue capturada en orientación rotada; la corrección es necesaria para que el clasificador funcione correctamente. Usar la imagen correcta evita crops vacíos o desalineados
 
 ---
 
 ### REGLA-B07 · Sin clasificador disponible
-- **Cuándo:** ConvNeXt no está cargado o la imagen frontal no se proporcionó
-- **Condición:** `clasificador is None` o `img_frontal is None`
+- **Cuándo:** ConvNeXt no está cargado o la imagen fuente no se proporcionó
+- **Condición:** `clasificador is None` o imagen fuente `is None`
 - **Decisión:** usar `producto_id = "{Clase}_{contador}"` (ej. `Flores_1`, `Planta_2`)
 - **Razón:** el conteo sigue siendo válido aunque sin identificación de especie
 
@@ -130,3 +150,11 @@
 - **Condición:** dos o más masas en la misma balda tienen el mismo `producto_id`
 - **Decisión:** sumar sus `detecciones`, `tallos_totales` y `unidades_totales`; promediar sus confianzas
 - **Razón:** el mismo producto puede aparecer en múltiples detecciones separadas dentro de la misma balda
+
+---
+
+### REGLA-B09 · Marca de confianza baja
+- **Cuándo:** al calcular la confianza media de un producto agrupado
+- **Condición:** `confianza_media < 0.5` (umbral configurable en `UMBRAL_CONFIANZA_BAJA`)
+- **Decisión:** añadir campo `"confianza_baja": true` en el JSON del producto
+- **Razón:** flores envueltas en plástico, crops parcialmente ocluidos o masas ambiguas pueden generar clasificaciones poco fiables; este flag permite al operario identificar y revisar manualmente esos casos

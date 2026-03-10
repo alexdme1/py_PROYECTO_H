@@ -1,7 +1,7 @@
 """
 Test Area — Inference App (Mask R-CNN + ConvNeXt)
 Run with:
-    /home/servi2/Enviroments/main_venv/bin/python test_area/app.py
+    python test_area/app.py
 """
 
 import os
@@ -12,7 +12,7 @@ from streamlit.runtime import exists as _st_running
 if not _st_running():
     import subprocess
     sys.exit(subprocess.run([
-        "/home/servi2/Enviroments/main_venv/bin/streamlit", "run",
+        sys.executable, "-m", "streamlit", "run",
         os.path.abspath(__file__),
         "--server.headless=false"
     ]).returncode)
@@ -35,8 +35,8 @@ st.set_page_config(
     layout="centered",
 )
 
-# ── Rutas base ─────────────────────────────────────────────────────
-BASE_DIR       = "/home/servi2/Escritorio/py_PROYECTO_H"
+# ── Rutas base (dinámicas, funcionan en cualquier máquina) ─────────
+BASE_DIR       = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MASKRCNN_BASE  = os.path.join(BASE_DIR, "models", "maskrcnn")
 CONVNEXT_BASE  = os.path.join(BASE_DIR, "models", "convnext")
 COCO_JSON      = os.path.join(BASE_DIR, "data", "coco_unified", "annotations", "test.json")
@@ -396,7 +396,7 @@ else:
                     resultado = procesar_pareja_imagenes(det_f, det_b)
                     conteo_final, ticket_mapping = contar_articulos(
                         det_f, det_b, resultado['asignacion_base'],
-                        img_frontal=img_f, clasificador=clasificador
+                        img_frontal=img_f, img_trasera=img_b, clasificador=clasificador
                     )
 
                     # Visualizaciones con Detectron2
