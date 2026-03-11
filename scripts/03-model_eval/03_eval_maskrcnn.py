@@ -1,5 +1,10 @@
 import os
+import sys
 import cv2
+
+# Desde scripts/03-model_eval/ → subir 2 niveles para llegar a la raíz del proyecto
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.join(_PROJECT_ROOT, "configs"))
 from detectron2.utils.logger import setup_logger
 from detectron2.config import get_cfg
 from detectron2 import model_zoo

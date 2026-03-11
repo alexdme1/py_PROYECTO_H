@@ -18,14 +18,14 @@ import detectron2.data.transforms as T
 from detectron2.data import DatasetMapper, build_detection_train_loader
 
 # Importe de configuración nativo del proyecto (nuestra pasarela YAML)
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# Desde scripts/02-model_training/ → subir 2 niveles para llegar a la raíz del proyecto
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.join(_PROJECT_ROOT, "configs"))
 try:
     from config_manager import parse_yaml_config, apply_custom_config_to_cfg
 except ImportError:
-    # Soporte por si se ejecuta desde otra carpeta o hay problemas de pathing
-    parent = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    sys.path.append(os.path.join(parent, "configs"))
-    from config_manager import parse_yaml_config, apply_custom_config_to_cfg
+    raise ImportError("No se encontró config_manager.py en configs/. "
+                      f"Buscado en: {os.path.join(_PROJECT_ROOT, 'configs')}")
 
 # ==============================================================================
 # AJUSTES GLOBALES
