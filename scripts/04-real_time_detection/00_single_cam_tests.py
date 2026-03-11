@@ -43,7 +43,7 @@ from config_manager import parse_yaml_config, apply_custom_config_to_cfg
 # CONFIGURACIÓN
 # =====================================================================
 
-RTSP_URL = "rtsp://admin:Verdnatura1.@10.1.14.15:554/Streaming/Channels/101"
+RTSP_URL = "rtsp://---:-----@-----:554/Streaming/Channels/101"
 
 MRCNN_MODEL_PATH = os.path.join(PROJECT_ROOT, "models", "maskrcnn",
                                  "big_aug_anchors_v4_hope", "model_final.pth")
