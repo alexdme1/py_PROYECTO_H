@@ -50,3 +50,7 @@ Thumbs.db
 
 # --- Legacy (carpeta de respaldo, no es código activo) ---
 00-Project_legacy_yolo/
+
+
+# --- camaras conectadas a la red
+test_area/conexion_camaras_test.py
