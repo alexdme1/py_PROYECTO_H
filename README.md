@@ -23,7 +23,8 @@
 8. [Configuración de ConvNeXt](#-configuración-de-convnext)
 9. [Config Manager](#-config-manager)
 10. [Aplicación web (Streamlit)](#-aplicación-web-streamlit)
-11. [Workflow de uso](#-workflow-de-uso)
+11. [Detección en tiempo real](#-detección-en-tiempo-real)
+12. [Workflow de uso](#-workflow-de-uso)
 
 ---
 
@@ -32,7 +33,7 @@
 El sistema fotografía **carros de plantas** desde dos ángulos:
 
 | Vista | Qué se ve | Ejemplo |
-|-------|-----------|---------|
+|-------|-----------|---------| 
 | **Frontal (F)** | Baldas, tickets de pedido, flores y plantas | `99F.png` |
 | **Trasera (B)** | Tallos que sobresalen por detrás | `99B.png` |
 
@@ -101,37 +102,54 @@ flowchart TD
 ```
 py_PROYECTO_H/
 │
-├── configs/                          ⚙️ Configuraciones YAML
-│   ├── config1.yaml                  Config Mask R-CNN
-│   ├── config_convnext.yaml          Config ConvNeXt
-│   └── config_manager.py             Parser YAML → Detectron2
+├── configs/                                    ⚙️ Configuraciones YAML
+│   ├── config1.yaml                            Config Mask R-CNN
+│   ├── config_convnext.yaml                    Config ConvNeXt
+│   └── config_manager.py                       Parser YAML → Detectron2
 │
-├── scripts/                          🔧 Pipeline (ejecutar en orden numérico)
-│   ├── 00_cropping.py                Extrae crops para clasificación
-│   ├── 00_trust_fix_coco.py          Verifica anotaciones visualmente
-│   ├── 01_fix_coco.py                Roboflow → COCO unificado
-│   ├── 02_train_maskrcnn.py          Entrenamiento Mask R-CNN
-│   ├── 03_eval_maskrcnn.py           Evaluación Mask R-CNN
-│   ├── 04_seg_tickets.py             Cruce espacial (visual)
-│   ├── 05_conteo.py                  Pipeline completo de conteo
-│   ├── 06_conteo_masivo.py           Conteo en lote
-│   ├── 07_train_convnext.py          Entrenamiento ConvNeXt
-│   ├── 08_eval_convnext.py           Evaluación ConvNeXt
-│   ├── conteo_module.py              Wrapper de importación
-│   └── upload_to_roboflow.py         Subida de crops a Roboflow
+├── scripts/                                    🔧 Pipeline (organizado por fase)
+│   ├── 01-preprocesing/                        Preprocesado de datos
+│   │   ├── 01_cropping.py                      Extrae crops para clasificación
+│   │   ├── 02_fix_coco.py                      Roboflow → COCO unificado
+│   │   └── 03_upload_to_roboflow.py            Subida de crops a Roboflow
+│   │
+│   ├── 02-model_training/                      Entrenamiento de modelos
+│   │   ├── 01_train_maskrcnn.py                Entrenamiento Mask R-CNN
+│   │   └── 02_train_convnext.py                Entrenamiento ConvNeXt
+│   │
+│   ├── 03-model_eval/                          Evaluación de modelos
+│   │   ├── 01_eval_maskrcnn.py                 Evaluación Mask R-CNN (COCO AP)
+│   │   └── 02_eval_convnext.py                 Evaluación ConvNeXt (accuracy, CM)
+│   │
+│   ├── 04-real_time_detection/                 Detección en tiempo real
+│   │   └── 00_single_cam_tests.py              Mask R-CNN + cámara RTSP
+│   │
+│   └── 05-logica_conteo_tallos/                Lógica de conteo
+│       ├── 05_conteo.py                        Pipeline completo de conteo
+│       └── conteo_module.py                    Wrapper de importación
 │
-├── test_area/                        🖥️ Aplicación web
-│   ├── app.py                        Streamlit (3 módulos)
-│   └── view_gt.py                    Visualizador ground truth
+├── test_area/                                  🖥️ Aplicación y tests
+│   ├── app.py                                  Streamlit (3 módulos)
+│   └── conexion_camaras_test.py                Test RTSP + YOLOv8
 │
-├── data/                             📊 Datasets (no versionado)
-├── models/                           🧠 Modelos entrenados (no versionado, 19 GB)
+├── documentation/                              📖 Documentación del proyecto
+│   ├── REGLAS_CONTEO.md                        Reglas A01-A07, B01-B09
+│   ├── WORKFLOW.md                             Flujo de trabajo paso a paso
+│   └── guion-clase.md                          Guion para presentación
+│
+├── exports/                                    📦 Archivos para despliegue
+│   ├── requirements.txt                        Dependencias Python
+│   ├── installation.txt                        Guía de instalación rápida
+│   └── download_models.py                      Descarga modelos desde HuggingFace
+│
+├── data/                                       📊 Datasets (no versionado)
+├── models/                                     🧠 Modelos entrenados (no versionado)
+├── outputs/                                    📁 Salidas de evaluación y capturas
 ├── .gitignore
-├── WORKFLOW.md
 └── README.md
 ```
 
-> **Nota:** `data/` y `models/` se excluyen de Git por su tamaño (19+ GB).
+> **Nota:** `data/`, `models/` y `outputs/` se excluyen de Git por su tamaño.
 
 ---
 
@@ -159,6 +177,7 @@ py_PROYECTO_H/
 | Streamlit | Latest | Aplicación web |
 | scikit-learn | Latest | Métricas de evaluación |
 | PyYAML | Latest | Configs |
+| ultralytics | Latest | YOLOv8 (test de cámaras) |
 
 ### Instalación rápida
 
@@ -167,11 +186,17 @@ py_PROYECTO_H/
 git clone https://github.com/alexdme1/py_PROYECTO_H.git
 cd py_PROYECTO_H
 
-# Dependencias
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
-pip install detectron2 -f https://dl.fbaipublicfiles.com/detectron2/wheels/cu118/torch2.0/index.html
-pip install timm streamlit scikit-learn pyyaml opencv-python matplotlib
+# Instalar dependencias
+pip install -r exports/requirements.txt
+
+# Instalar Detectron2 (requiere compilación)
+pip install git+https://github.com/facebookresearch/detectron2.git
+
+# Descargar modelos entrenados desde HuggingFace
+python exports/download_models.py
 ```
+
+> Para instrucciones más detalladas, consultar `exports/installation.txt`.
 
 ---
 
@@ -179,7 +204,7 @@ pip install timm streamlit scikit-learn pyyaml opencv-python matplotlib
 
 ```mermaid
 flowchart LR
-    A["Roboflow Export<br/>(COCO format)"] --> B["01_fix_coco.py"]
+    A["Roboflow Export<br/>(COCO format)"] --> B["02_fix_coco.py"]
     B --> C["data/coco_unified/"]
     C --> D["train.json"]
     C --> E["valid.json"]
@@ -187,7 +212,7 @@ flowchart LR
     C --> G["images/"]
 ```
 
-**Transformaciones de `01_fix_coco.py`:**
+**Transformaciones de `02_fix_coco.py`:**
 
 - Rota todas las imágenes **90° CCW** (paisaje → retrato)
 - Rota bounding boxes y segmentaciones poligonales
@@ -210,7 +235,7 @@ flowchart LR
 |---------------------|----------|-------------|
 | `Flores` | 0 | `Flores` |
 | `0` | 1 | `ticket` |
-| `Balda1`, `Balda2`, `Balda3` | 2 | `Balda` |
+| `Balda`, `Balda1`, `Balda2`, `Balda3` | 2 | `Balda` |
 | `Planta` | 3 | `Planta` |
 | `tallo_grupo` | 4 | `tallo_grupo` |
 
@@ -218,9 +243,11 @@ flowchart LR
 
 ## 📜 Scripts — Referencia completa
 
+### 📂 `01-preprocesing/` — Preprocesado de datos
+
 ---
 
-### `00_cropping.py` — Extracción de crops
+#### `01_cropping.py` — Extracción de crops
 
 Recorta bounding boxes de `Flores` y `Planta` para crear el dataset de clasificación por especie.
 
@@ -232,31 +259,11 @@ Recorta bounding boxes de `Flores` y `Planta` para crear el dataset de clasifica
 | `TARGET_CATEGORY_NAMES` | `{"Flores", "Planta"}` | Clases a recortar |
 | `MIN_CROP_SIZE` | `10 px` | Descarta crops muy pequeños |
 
-**Funciones:**
-
-| Función | Descripción |
-|---------|-------------|
-| `process_split()` | Lee JSON COCO, extrae bboxes, recorta, rota 90° CCW, guarda en `OUTPUT_DIR/{clase}/` |
-| `main()` | Orquesta todos los splits y muestra estadísticas |
-
 **Salida:** `data/crops_clasificacion/{Flores,Planta}/*.png`
 
 ---
 
-### `00_trust_fix_coco.py` — Verificador visual
-
-Dibuja ground truth (bboxes + masks translúcidas) sobre N imágenes aleatorias para verificar el dataset.
-
-**Funciones:**
-
-| Función | Descripción |
-|---------|-------------|
-| `get_color_for_id()` | Color BGR único por categoría |
-| `draw_ground_truth()` | Carga JSON → dibuja bboxes + segmentaciones → guarda visualizaciones |
-
----
-
-### `01_fix_coco.py` — Unificador de datasets
+#### `02_fix_coco.py` — Unificador de datasets
 
 Convierte exports de Roboflow en un dataset COCO limpio y unificado.
 
@@ -271,7 +278,22 @@ Convierte exports de Roboflow en un dataset COCO limpio y unificado.
 
 ---
 
-### `02_train_maskrcnn.py` — Entrenamiento Mask R-CNN
+#### `03_upload_to_roboflow.py` — Subida a Roboflow
+
+Sube crops clasificados a Roboflow para crear datasets anotados.
+
+> **API Key:** Se lee de variable de entorno. Configurar con:
+> ```bash
+> export ROBOFLOW_API_KEY="tu_api_key"
+> ```
+
+---
+
+### 📂 `02-model_training/` — Entrenamiento
+
+---
+
+#### `01_train_maskrcnn.py` — Entrenamiento Mask R-CNN
 
 Entrena un **Mask R-CNN** con backbone **ResNet-50 FPN** para segmentación de instancias.
 
@@ -295,72 +317,7 @@ Entrena un **Mask R-CNN** con backbone **ResNet-50 FPN** para segmentación de i
 
 ---
 
-### `03_eval_maskrcnn.py` — Evaluación Mask R-CNN
-
-Evalúa un modelo entrenado con métricas COCO estándar (AP, AP50, AP75) y genera visualizaciones filtradas.
-
-| Parámetro | Descripción |
-|-----------|-------------|
-| `model_path` | Ruta al `.pth` del modelo |
-| `min_area` | Área mínima de máscara en píxeles para dibujar (default: 5000) |
-
----
-
-### `04_seg_tickets.py` — Cruce espacial (visual)
-
-Versión visual del cruce ticket-balda con líneas y zonas coloreadas. Útil para debug y presentación.
-
-**Funciones:**
-
-| Función | Descripción |
-|---------|-------------|
-| `asignar_tickets_a_baldas()` | Asigna tickets a baldas por posición Y. Cada ticket se expande a baldas adyacentes sin ticket propio |
-| `procesar_pareja_imagenes()` | Traslada la asignación frontal al espacio trasero |
-| `contar_articulos()` | Cuenta Flores/Plantas por balda cruzando ambas vistas |
-| `extract_detections()` | Convierte `outputs["instances"]` a lista de dicts `{class, bbox}` |
-
----
-
-### `05_conteo.py` — ⭐ Pipeline completo de conteo
-
-Script principal. Ejecuta detección + clasificación + conteo y genera el JSON de inventario.
-
-**Variables de configuración** (bloque `__main__`):
-
-| Variable | Descripción |
-|----------|-------------|
-| `MRCNN_MODEL_PATH` | Ruta al `.pth` de Mask R-CNN |
-| `SCORE_THRESH` | Umbral de confianza (default: 0.10) |
-| `CONVNEXT_RUN_DIR` | Carpeta del run de ConvNeXt |
-| `CONVNEXT_MODEL_PATH` | Ruta al `.pth` de ConvNeXt |
-| `IMAGE_FRONTAL_PATH` | Imagen frontal de prueba |
-| `IMAGE_TRASERA_PATH` | Imagen trasera de prueba |
-
-**Lógica de `contar_articulos()`:**
-
-```mermaid
-flowchart TD
-    A["Separar baldas F y B<br/>Ordenar por Y"] --> B["Ubicar cada Flor/Planta<br/>en su balda frontal"]
-    A --> C["Ubicar cada tallo_grupo<br/>en su balda trasera"]
-    B --> D["MAPEO EN ESPEJO<br/>Invertir X + match Y<br/>→ sumar tallos a masas"]
-    C --> D
-    D --> E{"ConvNeXt<br/>disponible?"}
-    E -- Sí --> F["Crop → Rotar 90° CCW<br/>→ Clasificar → producto_id"]
-    E -- No --> G["Usar Flores_1 / Planta_1"]
-    F --> H["Agrupar por producto_id<br/>Sumar detecciones + tallos<br/>Promediar confianza"]
-    G --> H
-    H --> I["📋 JSON final"]
-```
-
----
-
-### `06_conteo_masivo.py` — Conteo en lote
-
-Mismo flujo que `05_conteo.py` pero iterando sobre **todos los pares** `{N}F.png` / `{N}B.png` en `data/dataset_final/`.
-
----
-
-### `07_train_convnext.py` — Entrenamiento ConvNeXt
+#### `02_train_convnext.py` — Entrenamiento ConvNeXt
 
 Entrena un **ConvNeXt Tiny** para clasificación de especies vegetales.
 
@@ -392,7 +349,22 @@ Entrena un **ConvNeXt Tiny** para clasificación de especies vegetales.
 
 ---
 
-### `08_eval_convnext.py` — Evaluación ConvNeXt
+### 📂 `03-model_eval/` — Evaluación
+
+---
+
+#### `01_eval_maskrcnn.py` — Evaluación Mask R-CNN
+
+Evalúa un modelo entrenado con métricas COCO estándar (AP, AP50, AP75) y genera visualizaciones filtradas.
+
+| Parámetro | Descripción |
+|-----------|-------------|
+| `model_path` | Ruta al `.pth` del modelo |
+| `min_area` | Área mínima de máscara en píxeles para dibujar (default: 5000) |
+
+---
+
+#### `02_eval_convnext.py` — Evaluación ConvNeXt
 
 Evaluación detallada del clasificador. Genera:
 
@@ -403,20 +375,90 @@ Evaluación detallada del clasificador. Genera:
 
 ---
 
-### `conteo_module.py` — Wrapper de importación
-
-Permite importar funciones de `05_conteo.py` en la app Streamlit sin ejecutar el bloque `__main__`.
+### 📂 `04-real_time_detection/` — Detección en tiempo real
 
 ---
 
-### `upload_to_roboflow.py` — Subida a Roboflow
+#### `00_single_cam_tests.py` — Mask R-CNN en cámara RTSP
 
-Sube crops clasificados a Roboflow para crear datasets anotados.
+Conecta a una cámara Hikvision por RTSP y ejecuta Mask R-CNN bajo demanda.
 
-> **API Key:** Se lee de variable de entorno. Configurar con:
-> ```bash
-> export ROBOFLOW_API_KEY="tu_api_key"
-> ```
+**Flujo:**
+
+1. Muestra el feed en vivo de la cámara (sin inferencia)
+2. `[r]` → Seleccionar ROI con el ratón (zona del carro a analizar)
+3. `[ESPACIO]` → Captura el frame actual, cropea la ROI, reescala a 1024×1024 y ejecuta Mask R-CNN + `asignar_tickets_a_baldas()`
+4. Resultado anotado en ventana aparte con bboxes coloreadas + panel de asignación
+
+**Controles:**
+
+| Tecla | Acción |
+|-------|--------|
+| `r` | Seleccionar ROI (zona de detección) |
+| `ESPACIO` | Capturar + detectar en la ROI |
+| `s` | Guardar última captura como PNG |
+| `c` | Cerrar ventana de resultados |
+| `q` | Salir |
+
+---
+
+### 📂 `05-logica_conteo_tallos/` — Lógica de conteo
+
+---
+
+#### `05_conteo.py` — ⭐ Pipeline completo de conteo
+
+Script principal. Ejecuta detección + clasificación + conteo y genera el JSON de inventario.
+
+**Variables de configuración** (bloque `__main__`):
+
+| Variable | Descripción |
+|----------|-------------|
+| `MRCNN_MODEL_PATH` | Ruta al `.pth` de Mask R-CNN |
+| `SCORE_THRESH` | Umbral de confianza (default: 0.10) |
+| `CONVNEXT_RUN_DIR` | Carpeta del run de ConvNeXt |
+| `CONVNEXT_MODEL_PATH` | Ruta al `.pth` de ConvNeXt |
+| `IMAGE_FRONTAL_PATH` | Imagen frontal de prueba |
+| `IMAGE_TRASERA_PATH` | Imagen trasera de prueba |
+
+**Lógica de `contar_articulos()`:**
+
+```mermaid
+flowchart TD
+    A["Separar baldas F y B<br/>Ordenar por Y"] --> B["Ubicar cada Flor/Planta<br/>en su balda frontal"]
+    A --> C["Ubicar cada tallo_grupo<br/>en su balda trasera"]
+    B --> D["MAPEO EN ESPEJO<br/>Invertir X + match Y<br/>→ sumar tallos a masas"]
+    C --> D
+    D --> E{"ConvNeXt<br/>disponible?"}
+    E -- Sí --> F["Crop → Rotar 90° CCW<br/>→ Clasificar → producto_id"]
+    E -- No --> G["Usar Flores_1 / Planta_1"]
+    F --> H["Agrupar por producto_id<br/>Sumar detecciones + tallos<br/>Promediar confianza"]
+    G --> H
+    H --> I["📋 JSON final"]
+```
+
+Reglas implementadas: **A01-A07** (asignación ticket→balda) y **B01-B09** (conteo bidireccional). Documentación completa en `documentation/REGLAS_CONTEO.md`.
+
+---
+
+#### `conteo_module.py` — Wrapper de importación
+
+Permite importar funciones de `05_conteo.py` en otros scripts (app, detección RT) sin ejecutar el bloque `__main__`.
+
+**Funciones exportadas:**
+- `asignar_tickets_a_baldas()`
+- `procesar_pareja_imagenes()`
+- `contar_articulos()`
+
+---
+
+### 📂 `test_area/` — Aplicación y tests de cámara
+
+---
+
+#### `conexion_camaras_test.py` — Test RTSP + YOLOv8
+
+Test de conectividad con cámaras Hikvision. Usa **YOLOv8 nano** (pesos COCO) para detección de personas en tiempo real sobre el feed RTSP. Útil para verificar que la cámara está accesible antes de usar Mask R-CNN.
 
 ---
 
@@ -582,44 +624,73 @@ python test_area/app.py
 
 ---
 
+## 📹 Detección en tiempo real
+
+Archivo: `scripts/04-real_time_detection/00_single_cam_tests.py`
+
+Conecta a una cámara **Hikvision** por RTSP y ejecuta Mask R-CNN bajo demanda sobre la zona seleccionada.
+
+**Flujo de uso:**
+
+```mermaid
+flowchart TD
+    A["Feed RTSP en vivo<br/>(sin inferencia)"] --> B{"Pulsar [r]"}
+    B --> C["Seleccionar ROI<br/>con el ratón"]
+    C --> D["Feed con ROI<br/>dibujada"]
+    D --> E{"Pulsar [ESPACIO]"}
+    E --> F["Capturar frame<br/>Cropear ROI"]
+    F --> G["Resize a 1024×1024"]
+    G --> H["Mask R-CNN<br/>Inferencia"]
+    H --> I["asignar_tickets_a_baldas()"]
+    I --> J["Resultado anotado<br/>en ventana aparte"]
+    J --> D
+```
+
+> También disponible `test_area/conexion_camaras_test.py` con YOLOv8 nano para tests rápidos de conectividad.
+
+---
+
 ## 🔁 Workflow de uso
 
 ### Entrenamiento completo (desde cero)
 
 ```bash
 # 1. Preparar dataset (Roboflow → COCO unificado)
-python scripts/01_fix_coco.py
+python scripts/01-preprocesing/02_fix_coco.py
 
-# 2. Verificar visualmente las anotaciones
-python scripts/00_trust_fix_coco.py
+# 2. Entrenar Mask R-CNN
+python scripts/02-model_training/01_train_maskrcnn.py
 
-# 3. Entrenar Mask R-CNN
-python scripts/02_train_maskrcnn.py
+# 3. Evaluar Mask R-CNN
+python scripts/03-model_eval/01_eval_maskrcnn.py
 
-# 4. Evaluar Mask R-CNN
-python scripts/03_eval_maskrcnn.py
+# 4. Extraer crops para clasificación
+python scripts/01-preprocesing/01_cropping.py
 
-# 5. Extraer crops para clasificación
-python scripts/00_cropping.py
+# 5. Entrenar ConvNeXt
+python scripts/02-model_training/02_train_convnext.py
 
-# 6. Entrenar ConvNeXt
-python scripts/07_train_convnext.py
+# 6. Evaluar ConvNeXt
+python scripts/03-model_eval/02_eval_convnext.py
 
-# 7. Evaluar ConvNeXt
-python scripts/08_eval_convnext.py
+# 7. Conteo sobre un par de imágenes
+python scripts/05-logica_conteo_tallos/05_conteo.py
 
-# 8. Conteo sobre un par de imágenes
-python scripts/05_conteo.py
-
-# 9. Lanzar app web
+# 8. Lanzar app web
 python test_area/app.py
 ```
 
 ### Conteo rápido (modelos ya entrenados)
 
 ```bash
-# Editar rutas de modelo en scripts/05_conteo.py y ejecutar
-python scripts/05_conteo.py
+# Editar rutas de modelo en 05_conteo.py y ejecutar
+python scripts/05-logica_conteo_tallos/05_conteo.py
+```
+
+### Detección en tiempo real (cámara RTSP)
+
+```bash
+python scripts/04-real_time_detection/00_single_cam_tests.py
 ```
 
 ---
