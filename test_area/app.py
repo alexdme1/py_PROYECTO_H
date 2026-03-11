@@ -363,9 +363,9 @@ else:
             with st.spinner("Procesando pipeline Mask R-CNN + ConvNeXt..."):
                 try:
                     # Importar funciones de conteo
-                    scripts_dir = os.path.join(BASE_DIR, "scripts")
-                    if scripts_dir not in sys.path:
-                        sys.path.insert(0, scripts_dir)
+                    conteo_dir = os.path.join(BASE_DIR, "scripts", "05-logica_conteo_tallos")
+                    if conteo_dir not in sys.path:
+                        sys.path.insert(0, conteo_dir)
                     from conteo_module import asignar_tickets_a_baldas, procesar_pareja_imagenes, contar_articulos
 
                     # Decodificar imágenes
