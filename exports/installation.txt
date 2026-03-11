@@ -1,0 +1,11 @@
+git clone https://github.com/alexdme1/py_PROYECTO_H.git
+
+cd py_PROYECTO_H
+
+pip install -r requirements.txt
+
+pip install git+https://github.com/facebookresearch/detectron2.git
+
+python scripts/download_models.py
+
+python test_area/app.py

@@ -479,7 +479,8 @@ if __name__ == "__main__":
     import torch
 
     # Asegurar que configs/ está en el path para importar config_manager
-    PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    # Desde scripts/05-logica_conteo_tallos/ → subir 2 niveles = raíz del proyecto
+    PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     sys.path.insert(0, os.path.join(PROJECT_ROOT, "configs"))
     os.chdir(PROJECT_ROOT)
 
