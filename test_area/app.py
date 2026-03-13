@@ -445,96 +445,39 @@ elif model_type == "📊 Conteo (Pipeline completo)":
 elif model_type == "🌳 Árbol – Etiquetar":
     import pandas as pd
     st.subheader("🌳 Árbol de Conteo — Etiquetar detecciones")
+    st.caption("Etiqueta unidades por detección. Los datos provienen de `detections_raw.csv`.")
 
-    # Importar módulos
-    prepro_dir = os.path.join(BASE_DIR, "scripts", "01-preprocesing")
+    # Importar módulo de datos
     conteo_dir = os.path.join(BASE_DIR, "scripts", "05-logica_conteo_tallos")
-    for d in [prepro_dir, conteo_dir]:
-        if d not in sys.path:
-            sys.path.insert(0, d)
-
-    from importlib.util import spec_from_file_location, module_from_spec
-    _feat_path = os.path.join(prepro_dir, "04_build_tree_features.py")
-    _spec = spec_from_file_location("tree_features", _feat_path)
-    _feat_mod = module_from_spec(_spec)
-    _spec.loader.exec_module(_feat_mod)
-    construir_detecciones_enriquecidas = _feat_mod.construir_detecciones_enriquecidas
-    enlazar_vecinos_misma_vista = _feat_mod.enlazar_vecinos_misma_vista
-    enlazar_corresponsales_otra_vista = _feat_mod.enlazar_corresponsales_otra_vista
-    calcular_agregados_contexto = _feat_mod.calcular_agregados_contexto
-
+    if conteo_dir not in sys.path:
+        sys.path.insert(0, conteo_dir)
     import decision_tree_data as dtd
-    from conteo_lib import procesar_pareja_imagenes
 
-    # --- Encontrar pares ---
+    # --- Cargar CSV de features ---
+    df_raw = dtd.load_raw()
+    if df_raw.empty:
+        st.error("❌ No existe `data/arbol_conteo/detections_raw.csv`. Ejecuta primero:\n\n"
+                 "`python3 scripts/01-preprocesing/04_build_tree_features.py`")
+        st.stop()
+
+    # Solo pares que existen en el CSV
+    raw_pair_ids = sorted(df_raw["image_pair_id"].astype(str).unique(),
+                          key=lambda x: int(x) if x.isdigit() else x)
     dataset_path = os.path.join(BASE_DIR, "data", "dataset_final")
-    if not os.path.isdir(dataset_path):
-        st.error(f"No se encontró `data/dataset_final` en `{BASE_DIR}`")
-        st.stop()
 
-    import re as _re
-    front_files = sorted(glob.glob(os.path.join(dataset_path, "*F.*")))
-    pair_ids = []
-    for fp in front_files:
-        m = _re.match(r'(\d+)F\.', os.path.basename(fp))
-        if m:
-            pid = m.group(1)
-            ext = os.path.splitext(fp)[1]
-            bp = os.path.join(dataset_path, f"{pid}B{ext}")
-            if os.path.exists(bp):
-                pair_ids.append((pid, fp, bp))
-
-    if not pair_ids:
-        st.error("No se encontraron pares de imágenes en dataset_final.")
-        st.stop()
-
-    # --- Inicializar índice en session_state ---
+    # --- Inicializar navegación ---
     if "arb_pair_idx" not in st.session_state:
         st.session_state["arb_pair_idx"] = 0
-    if "arb_auto_run" not in st.session_state:
-        st.session_state["arb_auto_run"] = False
 
     idx = st.session_state["arb_pair_idx"]
-    idx = max(0, min(idx, len(pair_ids) - 1))
+    idx = max(0, min(idx, len(raw_pair_ids) - 1))
     st.session_state["arb_pair_idx"] = idx
-
-    # --- Configuración de modelos (sidebar-style, colapsable) ---
-    with st.expander("⚙️ Configuración de modelos", expanded=False):
-        col_m1, col_m2 = st.columns(2)
-        with col_m1:
-            st.markdown("**🎭 Mask R-CNN**")
-            mrcnn_runs = sorted([d for d in glob.glob(os.path.join(MASKRCNN_BASE, "*")) if os.path.isdir(d)], reverse=True)
-            if not mrcnn_runs:
-                st.error("No se encontraron runs de Mask R-CNN"); st.stop()
-            mrcnn_labels_d = {os.path.basename(p): p for p in mrcnn_runs}
-            sel_run = st.selectbox("Run:", list(mrcnn_labels_d.keys()), key="arb_mrcnn_run")
-            mrcnn_models = sorted(glob.glob(os.path.join(mrcnn_labels_d[sel_run], "*.pth")))
-            mrcnn_ml = {os.path.basename(p): p for p in mrcnn_models}
-            sel_ckpt = st.selectbox("Checkpoint:", list(mrcnn_ml.keys()), key="arb_mrcnn_ckpt")
-            arb_mrcnn_path = mrcnn_ml[sel_ckpt]
-            arb_thresh = st.slider("Umbral confianza", 0.05, 0.95, 0.70, 0.05, key="arb_thresh")
-        with col_m2:
-            st.markdown("**🔬 ConvNeXt**")
-            cnx_runs = sorted([d for d in glob.glob(os.path.join(CONVNEXT_BASE, "*")) if os.path.isdir(d)], reverse=True)
-            if not cnx_runs:
-                st.error("No se encontraron runs de ConvNeXt"); st.stop()
-            cnx_labels_d = {os.path.basename(p): p for p in cnx_runs}
-            sel_cnx_r = st.selectbox("Run:", list(cnx_labels_d.keys()), key="arb_cnx_run")
-            sel_cnx_dir = cnx_labels_d[sel_cnx_r]
-            cnx_models = sorted(glob.glob(os.path.join(sel_cnx_dir, "*.pth")))
-            cnx_ml = {os.path.basename(p): p for p in cnx_models}
-            sel_cnx_c = st.selectbox("Checkpoint:", list(cnx_ml.keys()), key="arb_cnx_ckpt")
-            arb_cnx_path = cnx_ml[sel_cnx_c]
 
     # --- Helpers para callbacks ---
     def _nav_to(new_idx):
-        """Callback: navega a un par y marca auto-run."""
         st.session_state["arb_pair_idx"] = new_idx
-        st.session_state.pop("arbol_dets", None)
-        st.session_state["arb_auto_run"] = True
 
     def _save_labels_for_pair(p_id, det_ids):
-        """Lee valores de label desde session_state y guarda."""
         new_rows = []
         for did in det_ids:
             key = f"label_{p_id}_{did}"
@@ -550,141 +493,128 @@ elif model_type == "🌳 Árbol – Etiquetar":
         dtd.save_labels(df_all)
 
     def _save_and_next(p_id, det_ids, current_idx, max_idx):
-        """Callback: guarda labels y avanza al siguiente par."""
         _save_labels_for_pair(p_id, det_ids)
         if current_idx < max_idx:
             _nav_to(current_idx + 1)
 
-    # --- Progreso y navegación ---
+    # --- Progreso ---
     df_labels_all = dtd.load_labels()
     labeled_pairs = set(df_labels_all["image_pair_id"].astype(str).unique()) if not df_labels_all.empty else set()
     n_labeled = len(labeled_pairs)
+    pair_id = raw_pair_ids[idx]
 
-    st.markdown(f"### 📸 Par **{pair_ids[idx][0]}** — {idx + 1}/{len(pair_ids)} · {n_labeled} etiquetados")
-    st.progress(idx / max(1, len(pair_ids) - 1))
+    st.markdown(f"### 📸 Par **{pair_id}** — {idx + 1}/{len(raw_pair_ids)} · {n_labeled} etiquetados")
+    st.progress(idx / max(1, len(raw_pair_ids) - 1))
 
+    # --- Navegación ---
     col_nav1, col_nav2, col_nav3 = st.columns([1, 1, 1])
     with col_nav1:
         st.button("◀ Anterior", disabled=(idx == 0), use_container_width=True,
                   key="arb_prev", on_click=_nav_to, args=(idx - 1,))
     with col_nav2:
-        new_idx = st.number_input("Ir a par #", min_value=1, max_value=len(pair_ids),
+        new_idx = st.number_input("Ir a par #", min_value=1, max_value=len(raw_pair_ids),
                                    value=idx + 1, key="arb_goto", label_visibility="collapsed")
         if new_idx - 1 != idx:
             _nav_to(new_idx - 1)
     with col_nav3:
-        st.button("Siguiente ▶", disabled=(idx >= len(pair_ids) - 1), use_container_width=True,
+        st.button("Siguiente ▶", disabled=(idx >= len(raw_pair_ids) - 1), use_container_width=True,
                   key="arb_next", on_click=_nav_to, args=(idx + 1,))
 
     st.markdown("---")
 
-    # --- Auto-ejecutar inferencia o botón manual ---
-    pair_id, f_path, b_path = pair_ids[idx]
-    should_run = st.session_state.pop("arb_auto_run", False)
+    # --- Datos del par actual desde el CSV ---
+    df_pair = df_raw[df_raw["image_pair_id"].astype(str) == pair_id]
 
-    if should_run or st.button("🔬 Ejecutar inferencia", type="primary", use_container_width=True, key="arb_run"):
-        with st.spinner(f"Procesando par {pair_id}..."):
-            try:
-                img_f = cv2.imread(f_path)
-                img_b = cv2.imread(b_path)
-                predictor = load_maskrcnn_predictor(arb_mrcnn_path, arb_thresh)
-                class_names_mrcnn = ["Flores", "ticket", "Balda", "Planta", "tallo_grupo"]
-                outputs_f = predictor(img_f)
-                outputs_b = predictor(img_b)
+    # Cargar imágenes
+    f_ext = ".png"
+    f_path = os.path.join(dataset_path, f"{pair_id}F{f_ext}")
+    b_path = os.path.join(dataset_path, f"{pair_id}B{f_ext}")
+    # Probar con .jpg si .png no existe
+    if not os.path.exists(f_path):
+        f_ext = ".jpg"
+        f_path = os.path.join(dataset_path, f"{pair_id}F{f_ext}")
+        b_path = os.path.join(dataset_path, f"{pair_id}B{f_ext}")
 
-                def _ext(out):
-                    inst = out["instances"].to("cpu")
-                    return [{'class': class_names_mrcnn[c], 'bbox': b.tolist(), 'score': float(s)}
-                            for b, c, s in zip(inst.pred_boxes.tensor.numpy(),
-                                               inst.pred_classes.numpy(), inst.scores.numpy())]
+    if not os.path.exists(f_path):
+        st.warning(f"⚠️ No se encontraron imágenes para par {pair_id} en dataset_final.")
+    else:
+        img_f = cv2.imread(f_path)
+        img_b = cv2.imread(b_path) if os.path.exists(b_path) else None
 
-                det_f, det_b = _ext(outputs_f), _ext(outputs_b)
-                cnx_model, cnx_cls, cnx_tr, cnx_dev = load_convnext_model(arb_cnx_path, sel_cnx_dir)
-                clasificador = (cnx_model, cnx_tr, cnx_cls, cnx_dev)
-                resultado = procesar_pareja_imagenes(det_f, det_b)
-                asign = resultado['asignacion_base']
+        # Dibujar bboxes desde el CSV (sin necesidad de inferencia)
+        img_f_draw = img_f.copy() if img_f is not None else None
+        img_b_draw = img_b.copy() if img_b is not None else None
 
-                if not asign:
-                    st.warning(f"⚠️ Par {pair_id}: sin tickets/baldas válidos.")
-                    st.session_state.pop("arbol_dets", None)
-                else:
-                    bf = sorted([d for d in det_f if d['class'].lower() == 'balda'], key=lambda x: x['bbox'][1])
-                    bb = sorted([d for d in det_b if d['class'].lower() == 'balda'], key=lambda x: x['bbox'][1])
-                    dets = construir_detecciones_enriquecidas(
-                        det_f, det_b, asign, bf, bb,
-                        carro_id="poc", image_pair_id=pair_id,
-                        clasificador=clasificador, img_frontal=img_f, img_trasera=img_b,
-                    )
-                    enlazar_vecinos_misma_vista(dets)
-                    enlazar_corresponsales_otra_vista(dets)
-                    calcular_agregados_contexto(dets)
-                    st.session_state["arbol_dets"] = dets
-                    st.session_state["arbol_pair_id"] = pair_id
-                    st.session_state["arbol_img_f"] = img_f
-                    st.session_state["arbol_img_b"] = img_b
-
-            except Exception as e:
-                st.error(f"Error: {e}")
-                import traceback
-                st.code(traceback.format_exc())
-
-    # --- Mostrar y etiquetar ---
-    if "arbol_dets" in st.session_state and st.session_state.get("arbol_pair_id") == pair_id:
-        dets = st.session_state["arbol_dets"]
-        img_f = st.session_state["arbol_img_f"]
-        img_b = st.session_state["arbol_img_b"]
-
-        # Dibujar bboxes
-        img_f_draw, img_b_draw = img_f.copy(), img_b.copy()
-        for d in dets:
-            if d.tipo_d == 'tallo': continue
-            color = (0, 255, 0) if d.tipo_d == 'flor' else (255, 165, 0)
-            img_d = img_f_draw if d.lado_d == 'F' else img_b_draw
-            cv2.rectangle(img_d, (int(d.bbox_x1), int(d.bbox_y1)), (int(d.bbox_x2), int(d.bbox_y2)), color, 2)
-            cv2.putText(img_d, f"#{d.detection_id} {d.sku_d or d.tipo_d}",
-                        (int(d.bbox_x1), int(d.bbox_y1) - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+        for _, row in df_pair.iterrows():
+            tipo = str(row.get("tipo_d", ""))
+            if tipo == "tallo":
+                continue
+            color = (0, 255, 0) if tipo == "flor" else (255, 165, 0)
+            lado = str(row.get("lado_d", ""))
+            img_d = img_f_draw if lado == "F" else img_b_draw
+            if img_d is None:
+                continue
+            x1, y1 = int(row["bbox_x1"]), int(row["bbox_y1"])
+            x2, y2 = int(row["bbox_x2"]), int(row["bbox_y2"])
+            cv2.rectangle(img_d, (x1, y1), (x2, y2), color, 2)
+            det_id = int(row["detection_id"])
+            sku = str(row.get("sku_d", ""))
+            cv2.putText(img_d, f"#{det_id} {sku or tipo}",
+                        (x1, y1 - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
         col1, col2 = st.columns(2)
         with col1:
-            st.image(cv2.cvtColor(img_f_draw, cv2.COLOR_BGR2RGB), caption="Frontal")
+            if img_f_draw is not None:
+                st.image(cv2.cvtColor(img_f_draw, cv2.COLOR_BGR2RGB), caption="Frontal")
         with col2:
-            st.image(cv2.cvtColor(img_b_draw, cv2.COLOR_BGR2RGB), caption="Trasera")
+            if img_b_draw is not None:
+                st.image(cv2.cvtColor(img_b_draw, cv2.COLOR_BGR2RGB), caption="Trasera")
 
-        # Labels existentes
-        existing = {}
-        if not df_labels_all.empty:
-            for _, row in df_labels_all.iterrows():
-                if str(row["image_pair_id"]) == str(pair_id):
-                    existing[int(row["detection_id"])] = int(row["unidades_label_d"])
+    # --- Formulario de etiquetado (solo flor/planta del CSV) ---
+    plant_rows = df_pair[df_pair["tipo_d"].isin(["flor", "planta"])].copy()
 
-        # Formulario
-        plant_dets = [d for d in dets if d.tipo_d in ('flor', 'planta')]
-        if not plant_dets:
-            st.info("No hay detecciones de flor/planta para etiquetar en este par.")
-        else:
-            st.markdown(f"### ✏️ Etiquetar unidades ({len(plant_dets)} detecciones)")
-            n_cols = min(4, len(plant_dets))
-            cols = st.columns(n_cols)
-            det_ids_for_save = []
-            for i, d in enumerate(plant_dets):
-                det_ids_for_save.append(d.detection_id)
-                with cols[i % n_cols]:
-                    default_val = existing.get(d.detection_id, 0)
-                    st.number_input(
-                        f"#{d.detection_id} {d.tipo_d} {d.sku_d}",
-                        min_value=0, max_value=50, value=default_val,
-                        key=f"label_{pair_id}_{d.detection_id}"
-                    )
+    # Labels existentes
+    existing = {}
+    if not df_labels_all.empty:
+        for _, row in df_labels_all.iterrows():
+            if str(row["image_pair_id"]) == str(pair_id):
+                existing[int(row["detection_id"])] = int(row["unidades_label_d"])
 
-            col_s1, col_s2 = st.columns(2)
-            with col_s1:
-                st.button("💾 Guardar", use_container_width=True, key="arb_save",
-                          on_click=_save_labels_for_pair, args=(pair_id, det_ids_for_save))
-            with col_s2:
-                st.button("💾 Guardar y Siguiente ▶", type="primary", use_container_width=True,
-                          key="arb_save_next",
-                          on_click=_save_and_next,
-                          args=(pair_id, det_ids_for_save, idx, len(pair_ids) - 1))
+    if plant_rows.empty:
+        st.info("No hay detecciones de flor/planta en este par.")
+    else:
+        st.markdown(f"### ✏️ Etiquetar unidades ({len(plant_rows)} detecciones)")
+        n_cols = min(4, len(plant_rows))
+        cols = st.columns(n_cols)
+        det_ids_for_save = []
+        for i, (_, row) in enumerate(plant_rows.iterrows()):
+            did = int(row["detection_id"])
+            det_ids_for_save.append(did)
+            with cols[i % n_cols]:
+                default_val = existing.get(did, 0)
+                tipo = str(row.get("tipo_d", ""))
+                sku = str(row.get("sku_d", ""))
+                st.number_input(
+                    f"#{did} {tipo} {sku}",
+                    min_value=0, max_value=50, value=default_val,
+                    key=f"label_{pair_id}_{did}"
+                )
+
+        col_s1, col_s2 = st.columns(2)
+        with col_s1:
+            st.button("💾 Guardar", use_container_width=True, key="arb_save",
+                      on_click=_save_labels_for_pair, args=(pair_id, det_ids_for_save))
+        with col_s2:
+            st.button("💾 Guardar y Siguiente ▶", type="primary", use_container_width=True,
+                      key="arb_save_next",
+                      on_click=_save_and_next,
+                      args=(pair_id, det_ids_for_save, idx, len(raw_pair_ids) - 1))
+
+
+
+
+
+
 
 
 
