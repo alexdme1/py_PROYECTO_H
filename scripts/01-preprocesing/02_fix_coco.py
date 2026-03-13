@@ -223,7 +223,7 @@ def fix_and_merge_dataset(input_dir, output_dir):
 
 if __name__ == "__main__":
     # --- RUTAS PRINCIPALES (MODIFICAR AQUÍ PARA CAMBIAR DE DATASET DE ENTRADA) ---
-    input_roboflow_dir = os.path.join("data", "Proyecto_H.v5i.coco(aug_mas_data)")
+    input_roboflow_dir = os.path.join("data", "Proyecto_HV3(augV3)")
     output_unified_dir = os.path.join("data", "coco_unified")
     
     fix_and_merge_dataset(input_roboflow_dir, output_unified_dir)

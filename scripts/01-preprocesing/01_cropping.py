@@ -26,13 +26,14 @@ import cv2
 # =============================================================================
 
 # Carpeta raíz del export de Roboflow (contiene train/, valid/, test/)
-ROBOFLOW_DIR = os.path.join("data", "Proyecto_H-TRASERAS_V2.coco")
+ROBOFLOW_DIR = os.path.join("data", "Proyecto_H.coco")
 
 # Splits a procesar (cada uno tiene sus imágenes + _annotations.coco.json dentro)
-SPLITS = ["train", "valid", "test"]
+# SPLITS = ["train", "valid", "test"]
+SPLITS = ["train"]
 
 # Carpeta de salida para los crops
-OUTPUT_DIR = os.path.join("data", "crops_clasificacion_v2")
+OUTPUT_DIR = os.path.join("data", "crops_clasificacion_v3")
 
 # Nombres de categorías que queremos recortar (tal cual aparecen en Roboflow)
 TARGET_CATEGORY_NAMES = {"Flores", "Planta"}

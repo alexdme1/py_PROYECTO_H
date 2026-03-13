@@ -107,11 +107,18 @@ class FilteredImageFolder(datasets.ImageFolder):
         self._exclude = set(exclude or [])
         super().__init__(root, **kwargs)
 
+    def _is_excluded(self, class_name):
+        """Excluye por nombre exacto o por prefijo (ej: 'borrar' descarta 'borrar' y 'borrar-xxx')."""
+        for ex in self._exclude:
+            if class_name == ex or class_name.startswith(ex + "-"):
+                return True
+        return False
+
     def find_classes(self, directory):
         classes, class_to_idx = super().find_classes(directory)
-        # Filtrar las clases excluidas
-        classes = [c for c in classes if c not in self._exclude]
-        class_to_idx = {k: v for k, v in class_to_idx.items() if k not in self._exclude}
+        # Filtrar las clases excluidas (exacto + prefijo)
+        classes = [c for c in classes if not self._is_excluded(c)]
+        class_to_idx = {k: v for k, v in class_to_idx.items() if not self._is_excluded(k)}
         return classes, class_to_idx
 
 

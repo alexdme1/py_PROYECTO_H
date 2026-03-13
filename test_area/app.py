@@ -48,7 +48,7 @@ CONFIGS_DIR    = os.path.join(BASE_DIR, "configs")
 # =====================================================================
 
 @st.cache_resource(show_spinner="Cargando Mask R-CNN...")
-def load_maskrcnn_predictor(model_path: str, threshold: float):
+def load_maskrcnn_predictor(model_path: str, threshold: float, nms_thresh: float = 0.5):
     """Carga predictor Mask R-CNN con la config de config1.yaml (anchors, etc.)."""
     from detectron2.utils.logger import setup_logger
     setup_logger()
@@ -75,6 +75,7 @@ def load_maskrcnn_predictor(model_path: str, threshold: float):
 
     cfg.MODEL.WEIGHTS = model_path
     cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = threshold
+    cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST = nms_thresh
     return DefaultPredictor(cfg)
 
 
@@ -207,7 +208,9 @@ if model_type == "Mask R-CNN (Segmentación)":
     selected_model = st.selectbox("📦 Checkpoint:", list(model_labels.keys()), key="mrcnn_ckpt")
     selected_model_path = model_labels[selected_model]
 
-    threshold = st.slider("🎯 Umbral de confianza", 0.1, 0.95, 0.50, 0.05, key="mrcnn_thresh")
+    threshold = st.slider("🎯 Umbral de confianza", 0.05, 0.95, 0.50, 0.05, key="mrcnn_thresh")
+    nms_thresh = st.slider("📐 NMS IoU (solapamiento)", 0.1, 0.95, 0.50, 0.05, key="mrcnn_nms",
+                           help="Menor = suprime más bboxes solapadas. Mayor = permite más solapamiento.")
 
     # Clases
     try:
@@ -232,7 +235,7 @@ if model_type == "Mask R-CNN (Segmentación)":
             st.subheader("Predicciones")
             with st.spinner("Ejecutando Mask R-CNN..."):
                 try:
-                    predictor = load_maskrcnn_predictor(selected_model_path, threshold)
+                    predictor = load_maskrcnn_predictor(selected_model_path, threshold, nms_thresh)
                     result_bgr = run_maskrcnn_inference(predictor, image_bytes, class_names)
                     result_rgb = cv2.cvtColor(result_bgr, cv2.COLOR_BGR2RGB)
                     st.image(result_rgb, use_container_width=True)
@@ -321,6 +324,8 @@ else:
         sel_mrcnn_ckpt = st.selectbox("Checkpoint:", list(mrcnn_model_labels.keys()), key="cnt_mrcnn_ckpt")
         mrcnn_path = mrcnn_model_labels[sel_mrcnn_ckpt]
         threshold = st.slider("Umbral confianza", 0.05, 0.95, 0.20, 0.05, key="cnt_thresh")
+        nms_thresh = st.slider("NMS IoU (solapamiento)", 0.1, 0.95, 0.50, 0.05, key="cnt_nms",
+                               help="Menor = suprime más bboxes solapadas.")
 
     with col_m2:
         st.markdown("**🔬 ConvNeXt**")
@@ -373,7 +378,7 @@ else:
                     img_b = cv2.imdecode(np.frombuffer(bytes_b, np.uint8), cv2.IMREAD_COLOR)
 
                     # Mask R-CNN
-                    predictor = load_maskrcnn_predictor(mrcnn_path, threshold)
+                    predictor = load_maskrcnn_predictor(mrcnn_path, threshold, nms_thresh)
                     class_names_mrcnn = ["Flores", "ticket", "Balda", "Planta", "tallo_grupo"]
 
                     outputs_f = predictor(img_f)
@@ -394,7 +399,7 @@ else:
 
                     # Pipeline de conteo
                     resultado = procesar_pareja_imagenes(det_f, det_b)
-                    conteo_final, ticket_mapping = contar_articulos(
+                    conteo_final, ticket_mapping, bbox_labels = contar_articulos(
                         det_f, det_b, resultado['asignacion_base'],
                         img_frontal=img_f, img_trasera=img_b, clasificador=clasificador
                     )

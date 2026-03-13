@@ -14,12 +14,12 @@ from roboflow import Roboflow
 # CONFIGURACIÓN (MODIFICAR AQUÍ)
 # =============================================================================
 
-API_KEY = os.environ.get("ROBOFLOW_API_KEY", "casi_crack!")  # Configura: export ROBOFLOW_API_KEY="tu_key"
+API_KEY = os.environ.get("ROBOFLOW_API_KEY", "EN7iQhMMAT3BFZUkJhUb")  # Configura: export ROBOFLOW_API_KEY="tu_key"
 WORKSPACE = "floresverdnatura"
 PROJECT = "proyecto_h_clas"
 
 # Carpeta con los crops organizados en subcarpetas por clase
-CROPS_DIR = os.path.join("data", "crops_clasificacion_v2")
+CROPS_DIR = os.path.join("data", "crops_clasificacion_v3")
 
 
 # =============================================================================

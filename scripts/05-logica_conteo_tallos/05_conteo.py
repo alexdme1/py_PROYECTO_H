@@ -157,6 +157,9 @@ def contar_articulos(det_frontal, det_trasera, asignacion_base,
     import math
     import cv2
 
+    # Per-bbox labels para visualización (se devuelve como tercer valor)
+    bbox_labels = []
+
     # Separar y ordenar baldas
     baldas_f = [d for d in det_frontal if d.get('class', '').lower() == 'balda']
     baldas_f.sort(key=lambda x: x['bbox'][1])
@@ -210,8 +213,14 @@ def contar_articulos(det_frontal, det_trasera, asignacion_base,
         if clase in ['flores', 'planta']:
             b_idx = ubicar_en_balda(det['bbox'], baldas_f)
             if b_idx != -1:
-                masa = {**det, 'tallos_asociados': 0, 'vista': 'frontal'}
+                masa = {**det, 'tallos_asociados': 0, 'vista': 'frontal',
+                        '_bbox_label_idx': len(bbox_labels)}
                 masas_por_balda[b_idx].append(masa)
+                # Placeholder — se actualizará con producto_id tras clasificación
+                bbox_labels.append({
+                    'bbox': det['bbox'], 'label': clase.capitalize(),
+                    'conf': det.get('score'), 'vista': 'frontal'
+                })
 
     # 2. Flores/Planta TRASERAS → baldas traseras → flip X → espacio frontal (B01b)
     for det in det_trasera:
@@ -229,8 +238,13 @@ def contar_articulos(det_frontal, det_trasera, asignacion_base,
                 cy_proy = (det['bbox'][1] + det['bbox'][3]) / 2.0
 
                 masa = {**det, 'tallos_asociados': 0, 'vista': 'trasera',
-                        'cx_proyectado_f': cx_proy, 'cy_proyectado_f': cy_proy}
+                        'cx_proyectado_f': cx_proy, 'cy_proyectado_f': cy_proy,
+                        '_bbox_label_idx': len(bbox_labels)}
                 masas_por_balda[b_idx].append(masa)
+                bbox_labels.append({
+                    'bbox': det['bbox'], 'label': clase.capitalize(),
+                    'conf': det.get('score'), 'vista': 'trasera'
+                })
 
     # 3. tallo_grupo TRASEROS → baldas traseras
     tallos_traseros_por_balda = {i: [] for i in range(len(baldas_b))}
@@ -434,6 +448,12 @@ def contar_articulos(det_frontal, det_trasera, asignacion_base,
                         producto_id = cnx_classes[top_idx.item()]
                         confianza = top_prob.item()
 
+                # Actualizar bbox_labels con el producto_id clasificado
+                if producto_id is not None and '_bbox_label_idx' in masa:
+                    idx = masa['_bbox_label_idx']
+                    bbox_labels[idx]['label'] = producto_id
+                    bbox_labels[idx]['conf'] = confianza
+
                 # REGLA-B07: sin clasificador
                 if producto_id is None:
                     producto_id = f"{clase_str}_{contador_indices[clase_str]}"
@@ -469,7 +489,23 @@ def contar_articulos(det_frontal, det_trasera, asignacion_base,
 
             resultado_json[ticket_key][balda_key] = items_en_esta_balda
 
-    return resultado_json, ticket_mapping
+    # Añadir detecciones no-producto (ticket, Balda, tallo_grupo) al listado de bbox_labels
+    for det in det_frontal:
+        clase = det.get('class', '').lower()
+        if clase not in ['flores', 'planta']:
+            bbox_labels.append({
+                'bbox': det['bbox'], 'label': det['class'],
+                'conf': det.get('score'), 'vista': 'frontal'
+            })
+    for det in det_trasera:
+        clase = det.get('class', '').lower()
+        if clase not in ['flores', 'planta']:
+            bbox_labels.append({
+                'bbox': det['bbox'], 'label': det['class'],
+                'conf': det.get('score'), 'vista': 'trasera'
+            })
+
+    return resultado_json, ticket_mapping, bbox_labels
 
 if __name__ == "__main__":
     import os
@@ -622,7 +658,7 @@ if __name__ == "__main__":
     resultado = procesar_pareja_imagenes(det_f, det_b)
 
     # 7. Conteo por zonas + clasificación por especie
-    conteo_final, ticket_mapping = contar_articulos(
+    conteo_final, ticket_mapping, bbox_labels = contar_articulos(
         det_f, det_b, resultado['asignacion_base'],
         img_frontal=img_f, img_trasera=img_b, clasificador=clasificador
     )
